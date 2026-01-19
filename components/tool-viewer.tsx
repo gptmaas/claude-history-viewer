@@ -1,6 +1,6 @@
 'use client'
 
-import { CheckCircle2, Circle, File } from 'lucide-react'
+import { CheckCircle2, Circle, File, FileText } from 'lucide-react'
 import { MarkdownRenderer } from './markdown-renderer'
 
 interface ToolUseViewerProps {

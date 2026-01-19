@@ -16,6 +16,7 @@ import {
   Eye,
   Code,
   Zap,
+  Copy,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -41,6 +42,8 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
   const [showRawMessage, setShowRawMessage] = useState<string | null>(null)
   const pathname = usePathname()
   const router = useRouter()
+  const [copiedItem, setCopiedItem] = useState<string | null>(null)
+  const [workingDir, setWorkingDir] = useState<string | null>(null)
 
   // Load session on mount
   useEffect(() => {
@@ -101,6 +104,16 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
     })
 
     setToolStats(stats)
+  }, [messages])
+
+  // Extract working directory from first user message
+  useEffect(() => {
+    const firstUserMessage = messages.find(msg => msg.type === 'user')
+    if (firstUserMessage && 'cwd' in firstUserMessage && firstUserMessage.cwd) {
+      setWorkingDir(firstUserMessage.cwd)
+    } else {
+      setWorkingDir(null)
+    }
   }, [messages])
 
   // Handle scroll position detection
@@ -262,6 +275,15 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
   function handleExport(format: 'md' | 'json' | 'html') {
     const sessionId = session?.sessionId || ''
     window.open(`/api/sessions/${sessionId}/export?format=${format}`, '_blank')
+  }
+
+  function copyToClipboard(text: string, label: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedItem(label)
+      setTimeout(() => setCopiedItem(null), 2000)
+    }).catch((err) => {
+      console.error('Failed to copy:', err)
+    })
   }
 
   interface ContentTypeInfo {
@@ -635,19 +657,50 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
       <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-1 min-w-0">
               <Link href="/sessions">
                 <Button variant="ghost" size="icon">
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
               </Link>
-              <div>
+              <div className="flex-1 min-w-0">
                 <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-50 line-clamp-1">
                   {session.display}
                 </h1>
                 <p className="text-sm text-slate-600 dark:text-slate-400">
                   {session.projectName} · {formatDistanceToNow(new Date(session.date), { addSuffix: true })}
                 </p>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  <span className="text-xs text-slate-500 dark:text-slate-500">ID:</span>
+                  <code className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-1 rounded font-mono">
+                    {session.sessionId}
+                  </code>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => copyToClipboard(session.sessionId, 'sessionId')}
+                    className="h-6 px-2 text-slate-400 hover:text-slate-600 dark:text-slate-500"
+                    title={copiedItem === 'sessionId' ? 'Copied!' : 'Copy session ID'}
+                  >
+                    <Copy className="w-3 h-3 mr-1" />
+                    {copiedItem === 'sessionId' ? 'Copied!' : 'Copy'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const cmd = workingDir
+                        ? `cd "${workingDir}" && claude --resume ${session.sessionId}`
+                        : `claude --resume ${session.sessionId}`
+                      copyToClipboard(cmd, 'continueCmd')
+                    }}
+                    className="h-6 px-2 text-xs"
+                    title={copiedItem === 'continueCmd' ? 'Copied!' : 'Copy continue session command'}
+                  >
+                    <Copy className="w-3 h-3 mr-1" />
+                    {copiedItem === 'continueCmd' ? 'Copied!' : 'Copy continue cmd'}
+                  </Button>
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-2">

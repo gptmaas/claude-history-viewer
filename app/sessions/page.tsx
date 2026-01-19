@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { formatDistanceToNow } from 'date-fns'
-import { Search, Filter, MessageSquare, FolderOpen, Clock, ArrowLeft } from 'lucide-react'
+import { Search, Filter, MessageSquare, FolderOpen, Clock, ArrowLeft, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -27,6 +27,7 @@ export default function SessionsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [projects, setProjects] = useState<string[]>([])
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   useEffect(() => {
     loadSessions()
@@ -79,6 +80,15 @@ export default function SessionsPage() {
     }
 
     setFilteredSessions(filtered)
+  }
+
+  function copyToClipboard(text: string, id: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id)
+      setTimeout(() => setCopiedId(null), 2000)
+    }).catch((err) => {
+      console.error('Failed to copy:', err)
+    })
   }
 
   return (
@@ -163,6 +173,24 @@ export default function SessionsPage() {
                       <FolderOpen className="h-3 w-3" />
                       {session.projectName}
                     </CardDescription>
+                    <div className="flex items-center gap-2 mt-1">
+                      <code className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded font-mono">
+                        {session.sessionId}
+                      </code>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          copyToClipboard(session.sessionId, session.sessionId)
+                        }}
+                        title={copiedId === session.sessionId ? 'Copied!' : 'Copy session ID'}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-400">
