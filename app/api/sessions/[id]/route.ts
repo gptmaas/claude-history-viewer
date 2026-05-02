@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { loadSessionDetail } from '@/lib/claude-history'
+import { getSessionCache } from '@/lib/session-cache'
 import type { SessionDetailResponse } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -10,7 +10,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const detail = await loadSessionDetail(id)
+
+    // Get session detail from cache
+    const sessionCache = getSessionCache()
+    const detail = await sessionCache.getSessionDetail(id)
 
     if (!detail) {
       return NextResponse.json(
@@ -25,7 +28,7 @@ export async function GET(
       date: detail.session.date.toISOString(),
     }
 
-    const response = {
+    const response: SessionDetailResponse = {
       session: sessionWithDate,
       messages: detail.messages,
     }

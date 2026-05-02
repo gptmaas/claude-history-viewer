@@ -1,183 +1,37 @@
 import { NextResponse } from 'next/server'
-import { loadSessionsList, loadSessionDetail } from '@/lib/claude-history'
+import { getStatsCache, warmStatsCache } from '@/lib/stats-cache'
+import { startFileWatcher } from '@/lib/file-watcher'
+import type { DashboardStats } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
-interface ProjectStats {
-  project: string
-  projectName: string
-  totalSessions: number
-  lastUpdate: number
-  recentSessions: number
-  totalUserMessages: number
-  totalAssistantMessages: number
-  recentUserMessages: number
-  recentAssistantMessages: number
-}
-
-export interface DailyMessageCount {
-  date: string
-  count: number
-}
-
-export interface DashboardStats {
-  lastDayCount: number
-  lastWeekCount: number
-  totalSessions: number
-  totalUserMessages: number
-  totalAssistantMessages: number
-  lastDayUserMessages: number
-  lastDayAssistantMessages: number
-  topProjects: ProjectStats[]
-  dailyMessageCounts: DailyMessageCount[]
-}
+// Re-export types for use in other files
+export type { DashboardStats } from '@/lib/types'
+export type { ProjectStats, DailyMessageCount } from '@/lib/types'
 
 export async function GET() {
   try {
-    const sessions = await loadSessionsList()
-    const now = Date.now()
-    const oneDayMs = 24 * 60 * 60 * 1000
-    const oneWeekMs = 7 * oneDayMs
+    // Start file watcher on first request
+    startFileWatcher()
 
-    // Calculate time-based counts
-    const lastDayCount = sessions.filter(s => s.timestamp > now - oneDayMs).length
-    const lastWeekCount = sessions.filter(s => s.timestamp > now - oneWeekMs).length
+    // Warm cache on first request (idempotent due to cache check)
+    warmStatsCache()
 
-    // Count messages by type (sample recent sessions for performance)
-    const recentSessions = sessions
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, 100) // Only count messages from last 100 sessions for performance
-
-    let totalUserMessages = 0
-    let totalAssistantMessages = 0
-    let lastDayUserMessages = 0
-    let lastDayAssistantMessages = 0
-
-    for (const session of recentSessions) {
-      try {
-        const detail = await loadSessionDetail(session.sessionId)
-        if (detail) {
-          for (const msg of detail.messages) {
-            const msgTime = msg.timestamp ? new Date(msg.timestamp).getTime() : 0
-            const isLastDay = msgTime > now - oneDayMs
-
-            if (msg.type === 'user') {
-              totalUserMessages++
-              if (isLastDay) lastDayUserMessages++
-            } else if (msg.type === 'assistant') {
-              totalAssistantMessages++
-              if (isLastDay) lastDayAssistantMessages++
-            }
-          }
-        }
-      } catch {
-        // Skip sessions that fail to load
-        continue
-      }
-    }
-
-    // Aggregate by project with message counts
-    const projectMap = new Map<string, ProjectStats>()
-
-    for (const session of sessions) {
-      const key = session.project
-      if (!projectMap.has(key)) {
-        projectMap.set(key, {
-          project: session.project,
-          projectName: session.projectName,
-          totalSessions: 0,
-          lastUpdate: session.timestamp,
-          recentSessions: 0,
-          totalUserMessages: 0,
-          totalAssistantMessages: 0,
-          recentUserMessages: 0,
-          recentAssistantMessages: 0,
-        })
-      }
-      const stats = projectMap.get(key)!
-      stats.totalSessions++
-      if (session.timestamp > now - oneDayMs) {
-        stats.recentSessions++
-      }
-      if (session.timestamp > stats.lastUpdate) {
-        stats.lastUpdate = session.timestamp
-      }
-
-      // Count messages for this session
-      try {
-        const detail = await loadSessionDetail(session.sessionId)
-        if (detail) {
-          for (const msg of detail.messages) {
-            const msgTime = msg.timestamp ? new Date(msg.timestamp).getTime() : 0
-            const isLastDay = msgTime > now - oneDayMs
-
-            if (msg.type === 'user') {
-              stats.totalUserMessages++
-              if (isLastDay) stats.recentUserMessages++
-            } else if (msg.type === 'assistant') {
-              stats.totalAssistantMessages++
-              if (isLastDay) stats.recentAssistantMessages++
-            }
-          }
-        }
-      } catch {
-        // Skip sessions that fail to load
-        continue
-      }
-    }
-
-    // Sort by last update time and take top 10
-    const topProjects = Array.from(projectMap.values())
-      .sort((a, b) => b.lastUpdate - a.lastUpdate)
-      .slice(0, 10)
-
-    // Calculate daily message counts for the last 7 days
-    const dailyMessageCounts: DailyMessageCount[] = []
-    for (let i = 6; i >= 0; i--) {
-      const dayStart = new Date()
-      dayStart.setHours(0, 0, 0, 0)
-      dayStart.setDate(dayStart.getDate() - i)
-      const dayEnd = new Date(dayStart)
-      dayEnd.setDate(dayEnd.getDate() + 1)
-
-      const dayStartMs = dayStart.getTime()
-      const dayEndMs = dayEnd.getTime()
-
-      // Count messages from sessions that fall within this day
-      let dayMessageCount = 0
-      const daySessions = sessions.filter(
-        s => s.timestamp >= dayStartMs && s.timestamp < dayEndMs
-      )
-
-      for (const session of daySessions) {
-        try {
-          const detail = await loadSessionDetail(session.sessionId)
-          if (detail) {
-            dayMessageCount += detail.messages.filter(
-              m => m.type === 'user' || m.type === 'assistant'
-            ).length
-          }
-        } catch {
-          continue
-        }
-      }
-
-      dailyMessageCounts.push({
-        date: dayStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        count: dayMessageCount,
-      })
-    }
+    // Get stats from cache
+    const statsCache = getStatsCache()
+    const stats = await statsCache.getStats()
 
     const response: DashboardStats = {
-      lastDayCount,
-      lastWeekCount,
-      totalSessions: sessions.length,
-      totalUserMessages,
-      totalAssistantMessages,
-      lastDayUserMessages,
-      lastDayAssistantMessages,
-      topProjects,
-      dailyMessageCounts,
+      lastDayCount: stats.lastDayCount,
+      lastWeekCount: stats.lastWeekCount,
+      totalSessions: stats.totalSessions,
+      totalUserMessages: stats.totalUserMessages,
+      totalAssistantMessages: stats.totalAssistantMessages,
+      lastDayUserMessages: stats.lastDayUserMessages,
+      lastDayAssistantMessages: stats.lastDayAssistantMessages,
+      topProjects: stats.topProjects,
+      dailyMessageCounts: stats.dailyMessageCounts,
+      lastUpdated: stats.lastUpdated,
     }
 
     return NextResponse.json(response)

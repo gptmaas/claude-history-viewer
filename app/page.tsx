@@ -2,31 +2,44 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { MessageSquare, Search, BarChart3, Clock, Calendar, FolderOpen, TrendingUp, User, Bot } from 'lucide-react'
+import { MessageSquare, Search, BarChart3, Clock, Calendar, FolderOpen, TrendingUp, User, Bot, RefreshCw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ProjectCard } from '@/components/project-card'
+import { ProjectCard, type Project } from '@/components/project-card'
 import type { DashboardStats } from '@/app/api/stats/route'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { formatDistanceToNow } from 'date-fns'
 
 export default function HomePage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [statsLoading, setStatsLoading] = useState(true)
+  const [projectsLoading, setProjectsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    async function loadStats() {
-      try {
-        const response = await fetch('/api/stats')
-        if (!response.ok) throw new Error('Failed to load stats')
-        const data = await response.json()
+    // Phase 1: Load projects first (fast - no stats computation)
+    fetch('/api/projects')
+      .then(r => r.json())
+      .then(data => {
+        setProjects(data.projects)
+        setProjectsLoading(false)
+      })
+      .catch(err => {
+        console.error('Failed to load projects:', err)
+        setProjectsLoading(false)
+      })
+
+    // Phase 2: Load stats in parallel (slow - full stats computation)
+    fetch('/api/stats')
+      .then(r => r.json())
+      .then(data => {
         setStats(data)
-      } catch (err) {
+        setStatsLoading(false)
+      })
+      .catch(err => {
         setError(err instanceof Error ? err.message : 'Failed to load stats')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadStats()
+        setStatsLoading(false)
+      })
   }, [])
 
   return (
@@ -39,9 +52,20 @@ export default function HomePage() {
               <BarChart3 className="w-8 h-8 text-purple-600" />
               Claude Code Dashboard
             </h1>
-            <p className="text-slate-600 dark:text-slate-400 mt-1">
-              Overview of your conversation history
-            </p>
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-slate-600 dark:text-slate-400">
+                Overview of your conversation history
+              </p>
+              {!statsLoading && stats?.lastUpdated && (
+                <>
+                  <span className="text-slate-400">•</span>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3" />
+                    Last updated: {formatDistanceToNow(new Date(stats.lastUpdated), { addSuffix: true })}
+                  </p>
+                </>
+              )}
+            </div>
           </div>
           <nav className="flex gap-2">
             <Link
@@ -67,7 +91,8 @@ export default function HomePage() {
           </div>
         )}
 
-        {loading ? (
+        {/* Stats Cards - Show skeleton while loading, don't block projects */}
+        {statsLoading ? (
           <div className="grid md:grid-cols-3 gap-6 mb-8">
             {[...Array(3)].map((_, i) => (
               <Card key={i} className="animate-pulse">
@@ -195,29 +220,35 @@ export default function HomePage() {
                 </CardContent>
               </Card>
             </div>
-
-            {/* Top Projects */}
-            <div>
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-4 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-purple-600" />
-                Top 10 Active Projects
-              </h2>
-              {stats.topProjects.length === 0 ? (
-                <Card>
-                  <CardContent className="py-8 text-center text-muted-foreground">
-                    No projects found
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {stats.topProjects.map((projectStats) => (
-                    <ProjectCard key={projectStats.project} stats={projectStats} />
-                  ))}
-                </div>
-              )}
-            </div>
           </>
         ) : null}
+
+        {/* Top Projects - Load independently of stats */}
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-4 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-purple-600" />
+            Top 10 Active Projects
+          </h2>
+          {projectsLoading ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {[...Array(8)].map((_, i) => (
+                <Card key={i} className="animate-pulse h-48" />
+              ))}
+            </div>
+          ) : projects.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                No projects found
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {projects.slice(0, 10).map((project) => (
+                <ProjectCard key={project.project} stats={project} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { loadSessionsList } from '@/lib/claude-history'
+import { getSessionCache } from '@/lib/session-cache'
 import type { SessionsResponse } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -11,7 +11,9 @@ export async function GET(request: NextRequest) {
     const pageSize = parseInt(searchParams.get('pageSize') || '50')
     const project = searchParams.get('project')
 
-    let sessions = await loadSessionsList()
+    // Get sessions from cache
+    const sessionCache = getSessionCache()
+    let sessions = await sessionCache.getSessionList()
 
     // Filter by project if specified
     if (project) {
@@ -28,7 +30,7 @@ export async function GET(request: NextRequest) {
       date: s.date.toISOString(),
     }))
 
-    const response = {
+    const response: SessionsResponse = {
       sessions: sessionsForResponse,
       total,
       page,

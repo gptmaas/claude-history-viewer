@@ -56,7 +56,8 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
     const users: Array<{ uuid: string; timestamp: number }> = []
     messages.forEach((msg) => {
       if (msg.type === 'user') {
-        users.push({ uuid: msg.uuid, timestamp: msg.timestamp || Date.now() })
+        const ts = msg.timestamp ? (typeof msg.timestamp === 'string' ? new Date(msg.timestamp).getTime() : new Date(msg.timestamp).getTime()) : Date.now()
+        users.push({ uuid: msg.uuid, timestamp: ts })
       }
     })
     setUserMessages(users)
@@ -67,12 +68,16 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
     const stats = new Map<string, number>()
 
     messages.forEach((msg) => {
+      // Skip FileHistorySnapshot as it doesn't have content
+      if (msg.type === 'file-history-snapshot') return
+
       // Inline version of getContentTypeInfo for tool_use detection
-      let parsedContent: unknown = msg.content
-      if (typeof msg.content === 'string') {
+      const messageWithContent = msg as { content: string | unknown }
+      let parsedContent: unknown = messageWithContent.content
+      if (typeof messageWithContent.content === 'string') {
         try {
-          if (msg.content.trim().startsWith('{') || msg.content.trim().startsWith('[')) {
-            parsedContent = JSON.parse(msg.content)
+          if (messageWithContent.content.trim().startsWith('{') || messageWithContent.content.trim().startsWith('[')) {
+            parsedContent = JSON.parse(messageWithContent.content)
           }
         } catch {
           // Not valid JSON, skip
@@ -208,14 +213,15 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
 
         if (!closestMessage || distance < closestMessage.distance) {
           // Only consider user messages
-          if (messages.find(m => m.uuid === uuid)?.type === 'user') {
+          const foundMessage = messages.find(m => 'uuid' in m && m.uuid === uuid)
+          if (foundMessage?.type === 'user') {
             closestMessage = { uuid, distance }
           }
         }
       })
 
       if (closestMessage) {
-        setActiveMessageUuid(closestMessage.uuid)
+        setActiveMessageUuid((closestMessage as { uuid: string }).uuid)
       }
     }
 
@@ -399,7 +405,7 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
               {msg.timestamp && (
                 <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  {formatDateTime(msg.timestamp)}
+                  {formatDateTime(typeof msg.timestamp === 'string' ? new Date(msg.timestamp).getTime() : msg.timestamp || 0)}
                 </span>
               )}
               <Button
@@ -453,7 +459,7 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
               {msg.timestamp && (
                 <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  {formatDateTime(msg.timestamp)}
+                  {formatDateTime(typeof msg.timestamp === 'string' ? new Date(msg.timestamp).getTime() : msg.timestamp || 0)}
                 </span>
               )}
               <Button
@@ -519,7 +525,7 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
               {msg.timestamp && (
                 <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  {formatDateTime(msg.timestamp)}
+                  {formatDateTime(typeof msg.timestamp === 'string' ? new Date(msg.timestamp).getTime() : msg.timestamp || 0)}
                 </span>
               )}
               <Button
@@ -582,7 +588,7 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
               {msg.timestamp && (
                 <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  {formatDateTime(msg.timestamp)}
+                  {formatDateTime(typeof msg.timestamp === 'string' ? new Date(msg.timestamp).getTime() : msg.timestamp || 0)}
                 </span>
               )}
               <Button

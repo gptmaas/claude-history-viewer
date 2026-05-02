@@ -99,16 +99,26 @@ export interface SearchResult {
 // Export formats
 export type ExportFormat = 'md' | 'json' | 'html'
 
-// API response types
+// API response types (with Date serialized as ISO string)
+export interface SessionWithISODate {
+  sessionId: string
+  display: string
+  project: string
+  projectName: string
+  timestamp: number
+  date: string  // ISO string for JSON serialization
+  messageCount?: number
+}
+
 export interface SessionsResponse {
-  sessions: Session[]
+  sessions: SessionWithISODate[]
   total: number
   page: number
   pageSize: number
 }
 
 export interface SessionDetailResponse {
-  session: Session
+  session: SessionWithISODate
   messages: Message[]
 }
 
@@ -116,4 +126,31 @@ export interface SearchResponse {
   results: SearchResult[]
   total: number
   query: string
+}
+
+// Dashboard stats types
+export interface ProjectStats {
+  project: string
+  projectName: string
+  totalSessions: number
+  lastUpdate: number
+  recentSessions: number
+}
+
+export interface DailyMessageCount {
+  date: string
+  count: number
+}
+
+export interface DashboardStats {
+  lastDayCount: number
+  lastWeekCount: number
+  totalSessions: number
+  totalUserMessages: number
+  totalAssistantMessages: number
+  lastDayUserMessages: number
+  lastDayAssistantMessages: number
+  topProjects: ProjectStats[]
+  dailyMessageCounts: DailyMessageCount[]
+  lastUpdated?: number
 }

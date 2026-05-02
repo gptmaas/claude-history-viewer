@@ -4,7 +4,7 @@ module.exports = {
       name: 'claude-history-viewer',
       script: 'node_modules/next/dist/bin/next',
       args: 'start -p 3100',
-      cwd: '/path/to/claude-history-viewer',
+      cwd: '/Users/ethan/Documents/src/claude-history/claude-history-viewer',
       instances: 1,
       exec_mode: 'fork',
       autorestart: true,
@@ -14,6 +14,9 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3100,
       },
+      error_file: 'logs/error.log',
+      out_file: 'logs/out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
     },
   ],
 }

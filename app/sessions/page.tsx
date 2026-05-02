@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { formatDistanceToNow } from 'date-fns'
@@ -19,7 +19,7 @@ interface Session {
   messageCount?: number
 }
 
-export default function SessionsPage() {
+function SessionsPage() {
   const searchParams = useSearchParams()
   const [sessions, setSessions] = useState<Session[]>([])
   const [filteredSessions, setFilteredSessions] = useState<Session[]>([])
@@ -207,5 +207,21 @@ export default function SessionsPage() {
         )}
       </main>
     </div>
+  )
+}
+
+// Wrapper component with Suspense boundary for useSearchParams
+export default function WrappedSessionsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent" />
+          <p className="mt-4 text-slate-600 dark:text-slate-400">Loading sessions...</p>
+        </div>
+      </div>
+    }>
+      <SessionsPage />
+    </Suspense>
   )
 }

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ethan.claude-history-viewer</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/ethan/Documents/src/claude-history/claude-history-viewer/start.sh</string>
+        <string>start</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ethan/Documents/src/claude-history/claude-history-viewer</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ethan/Documents/src/claude-history/claude-history-viewer/logs/launchd-out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/ethan/Documents/src/claude-history/claude-history-viewer/logs/launchd-error.log</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+        <key>NetworkState</key>
+        <true/>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>SessionCreate</key>
+    <true/>
+
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>NODE_ENV</key>
+        <string>production</string>
+        <key>HOME</key>
+        <string>/Users/ethan</string>
+    </dict>
+
+    <key>Umask</key>
+    <integer>2</integer>
+
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>10240</integer>
+    </dict>
+
+    <key>HardResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>10240</integer>
+    </dict>
+</dict>
+</plist>
