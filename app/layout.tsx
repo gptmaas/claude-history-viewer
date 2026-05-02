@@ -1,13 +1,10 @@
 import type { Metadata } from "next"
-// import { Inter } from "next/font/google"
 import "./globals.css"
-
-// 临时注释Google字体，使用系统字体
-// const inter = Inter({ subsets: ["latin"] })
+import { AuthProvider } from "@/components/auth-provider"
 
 export const metadata: Metadata = {
-  title: "Claude Code History Viewer",
-  description: "View and search your Claude Code conversation history",
+  title: "CodeMemory - 代码记忆库",
+  description: "AI Coding 会话同步与分析平台 | 让每一次 AI Coding 会话，成为可搜索、可复用、可沉淀的开发记忆",
   icons: {
     icon: '/icon.png',
     shortcut: '/favicon.png',
@@ -22,7 +19,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+      </body>
     </html>
   )
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionCache } from '@/lib/session-cache'
-import type { SessionDetailResponse } from '@/lib/types'
+import { getDataSource } from '@/lib/data-source'
+import { getUserId } from '@/lib/get-user-id'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,9 +11,9 @@ export async function GET(
   try {
     const { id } = await params
 
-    // Get session detail from cache
-    const sessionCache = getSessionCache()
-    const detail = await sessionCache.getSessionDetail(id)
+    const userId = await getUserId()
+    const ds = getDataSource()
+    const detail = await ds.loadSessionDetail(userId, id)
 
     if (!detail) {
       return NextResponse.json(
@@ -22,18 +22,16 @@ export async function GET(
       )
     }
 
-    // Convert Date to ISO string for JSON serialization
+    const session = detail.session
     const sessionWithDate = {
-      ...detail.session,
-      date: detail.session.date.toISOString(),
+      ...session,
+      date: typeof session.date === 'string' ? session.date : (session.date as Date).toISOString(),
     }
 
-    const response: SessionDetailResponse = {
+    return NextResponse.json({
       session: sessionWithDate,
       messages: detail.messages,
-    }
-
-    return NextResponse.json(response)
+    })
   } catch (error) {
     console.error('Error loading session detail:', error)
     return NextResponse.json(

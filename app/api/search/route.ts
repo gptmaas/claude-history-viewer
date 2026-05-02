@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { searchSessions } from '@/lib/claude-history'
+import { getDataSource } from '@/lib/data-source'
+import { getUserId } from '@/lib/get-user-id'
 import type { SearchResponse } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -13,13 +14,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results: [], total: 0, query } as SearchResponse)
     }
 
-    const results = await searchSessions(query)
-
-    const response: SearchResponse = {
-      results,
-      total: results.length,
-      query,
-    }
+    const userId = await getUserId()
+    const ds = getDataSource()
+    const response = await ds.searchSessions(userId, query)
 
     return NextResponse.json(response)
   } catch (error) {

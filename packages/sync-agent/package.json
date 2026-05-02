@@ -1,0 +1,26 @@
+{
+  "name": "codememory-sync",
+  "version": "0.1.0",
+  "description": "CodeMemory sync agent - sync AI coding sessions to cloud",
+  "main": "dist/index.js",
+  "bin": {
+    "codememory-sync": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs --dts",
+    "dev": "tsup src/index.ts --format cjs --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "ora": "^5.4.1",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsup": "^8.3.5",
+    "typescript": "^5"
+  }
+}

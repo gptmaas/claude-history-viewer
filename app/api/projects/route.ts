@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { loadSessionsList } from '@/lib/claude-history'
+import { getDataSource } from '@/lib/data-source'
+import { getUserId } from '@/lib/get-user-id'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,30 +17,9 @@ export interface ProjectsResponse {
 
 export async function GET() {
   try {
-    const sessions = await loadSessionsList()
-
-    // Group by project (no stats computation - lightweight)
-    const projectMap = new Map<string, Project>()
-
-    for (const session of sessions) {
-      const key = session.project
-      if (!projectMap.has(key)) {
-        projectMap.set(key, {
-          project: session.project,
-          projectName: session.projectName,
-          totalSessions: 0,
-          lastUpdate: session.timestamp,
-        })
-      }
-      const stats = projectMap.get(key)!
-      stats.totalSessions++
-      if (session.timestamp > stats.lastUpdate) {
-        stats.lastUpdate = session.timestamp
-      }
-    }
-
-    const projects = Array.from(projectMap.values())
-      .sort((a, b) => b.lastUpdate - a.lastUpdate)
+    const userId = await getUserId()
+    const ds = getDataSource()
+    const projects = await ds.getProjects(userId)
 
     return NextResponse.json({ projects } satisfies ProjectsResponse)
   } catch (error) {

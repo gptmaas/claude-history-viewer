@@ -8,6 +8,7 @@ import { ProjectCard, type Project } from '@/components/project-card'
 import type { DashboardStats } from '@/app/api/stats/route'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { formatDistanceToNow } from 'date-fns'
+import { UserNav } from '@/components/user-nav'
 
 export default function HomePage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
@@ -50,11 +51,11 @@ export default function HomePage() {
           <div>
             <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-50 flex items-center gap-2">
               <BarChart3 className="w-8 h-8 text-purple-600" />
-              Claude Code Dashboard
+              CodeMemory
             </h1>
             <div className="flex items-center gap-2 mt-1">
               <p className="text-slate-600 dark:text-slate-400">
-                Overview of your conversation history
+                AI Coding 会话同步与分析平台
               </p>
               {!statsLoading && stats?.lastUpdated && (
                 <>
@@ -67,7 +68,7 @@ export default function HomePage() {
               )}
             </div>
           </div>
-          <nav className="flex gap-2">
+          <nav className="flex items-center gap-2">
             <Link
               href="/sessions"
               className="px-4 py-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors flex items-center gap-2 text-sm"
@@ -82,6 +83,7 @@ export default function HomePage() {
               <Search className="w-4 h-4" />
               Search
             </Link>
+            <UserNav />
           </nav>
         </div>
 

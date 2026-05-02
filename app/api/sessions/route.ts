@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionCache } from '@/lib/session-cache'
-import type { SessionsResponse } from '@/lib/types'
+import { getDataSource } from '@/lib/data-source'
+import { getUserId } from '@/lib/get-user-id'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,33 +9,11 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const page = parseInt(searchParams.get('page') || '1')
     const pageSize = parseInt(searchParams.get('pageSize') || '50')
-    const project = searchParams.get('project')
+    const project = searchParams.get('project') || undefined
 
-    // Get sessions from cache
-    const sessionCache = getSessionCache()
-    let sessions = await sessionCache.getSessionList()
-
-    // Filter by project if specified
-    if (project) {
-      sessions = sessions.filter((s) => s.project === project)
-    }
-
-    const total = sessions.length
-    const start = (page - 1) * pageSize
-    const paginatedSessions = sessions.slice(start, start + pageSize)
-
-    // Convert Date to ISO string for JSON serialization
-    const sessionsForResponse = paginatedSessions.map((s) => ({
-      ...s,
-      date: s.date.toISOString(),
-    }))
-
-    const response: SessionsResponse = {
-      sessions: sessionsForResponse,
-      total,
-      page,
-      pageSize,
-    }
+    const userId = await getUserId()
+    const ds = getDataSource()
+    const response = await ds.loadSessionsList(userId, page, pageSize, project)
 
     return NextResponse.json(response)
   } catch (error) {

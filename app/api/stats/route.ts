@@ -1,40 +1,20 @@
 import { NextResponse } from 'next/server'
-import { getStatsCache, warmStatsCache } from '@/lib/stats-cache'
-import { startFileWatcher } from '@/lib/file-watcher'
+import { getDataSource } from '@/lib/data-source'
+import { getUserId } from '@/lib/get-user-id'
 import type { DashboardStats } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
-// Re-export types for use in other files
 export type { DashboardStats } from '@/lib/types'
 export type { ProjectStats, DailyMessageCount } from '@/lib/types'
 
 export async function GET() {
   try {
-    // Start file watcher on first request
-    startFileWatcher()
+    const userId = await getUserId()
+    const ds = getDataSource()
+    const stats: DashboardStats = await ds.getDashboardStats(userId)
 
-    // Warm cache on first request (idempotent due to cache check)
-    warmStatsCache()
-
-    // Get stats from cache
-    const statsCache = getStatsCache()
-    const stats = await statsCache.getStats()
-
-    const response: DashboardStats = {
-      lastDayCount: stats.lastDayCount,
-      lastWeekCount: stats.lastWeekCount,
-      totalSessions: stats.totalSessions,
-      totalUserMessages: stats.totalUserMessages,
-      totalAssistantMessages: stats.totalAssistantMessages,
-      lastDayUserMessages: stats.lastDayUserMessages,
-      lastDayAssistantMessages: stats.lastDayAssistantMessages,
-      topProjects: stats.topProjects,
-      dailyMessageCounts: stats.dailyMessageCounts,
-      lastUpdated: stats.lastUpdated,
-    }
-
-    return NextResponse.json(response)
+    return NextResponse.json(stats)
   } catch (error) {
     console.error('Error loading dashboard stats:', error)
     return NextResponse.json(
