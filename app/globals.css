@@ -8,47 +8,51 @@
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 224 20% 8%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 224 20% 8%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --popover-foreground: 224 20% 8%;
+    --primary: 228 94% 67%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 224 20% 8%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 220 14% 96%;
+    --accent-foreground: 224 20% 8%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 228 94% 67%;
     --radius: 0.5rem;
+    --sidebar-bg: 0 0% 98%;
+    --sidebar-border: 220 13% 91%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --background: 224 20% 4%;
+    --foreground: 210 20% 98%;
+    --card: 224 16% 6%;
+    --card-foreground: 210 20% 98%;
+    --popover: 224 16% 6%;
+    --popover-foreground: 210 20% 98%;
+    --primary: 228 94% 67%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 11%;
+    --secondary-foreground: 210 20% 98%;
+    --muted: 220 14% 11%;
+    --muted-foreground: 215 14% 53%;
+    --accent: 220 14% 11%;
+    --accent-foreground: 210 20% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 220 13% 13%;
+    --input: 220 13% 13%;
+    --ring: 228 94% 67%;
+    --sidebar-bg: 220 18% 3.5%;
+    --sidebar-border: 220 13% 10%;
   }
 }
 
@@ -59,6 +63,43 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(220 13% 80%);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(220 13% 70%);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: hsl(220 13% 22%);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: hsl(220 13% 30%);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(220 13% 80%) transparent;
+}
+
+.dark * {
+  scrollbar-color: hsl(220 13% 22%) transparent;
 }
 
 /* Code block styling with proper overflow handling */
@@ -86,25 +127,42 @@
 }
 
 .prose thead {
-  @apply bg-slate-100 dark:bg-slate-800;
+  @apply bg-slate-100 dark:bg-zinc-800/50;
 }
 
 .prose th {
-  @apply border border-slate-300 dark:border-slate-700 px-4 py-2 text-left text-sm font-semibold text-slate-900 dark:text-slate-100;
+  @apply border border-slate-200 dark:border-zinc-700/50 px-4 py-2 text-left text-sm font-semibold text-slate-900 dark:text-zinc-200;
 }
 
 .prose td {
-  @apply border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300;
+  @apply border border-slate-200 dark:border-zinc-700/50 px-4 py-2 text-sm text-slate-700 dark:text-zinc-300;
 }
 
 .prose tbody tr:hover {
-  @apply bg-slate-50 dark:bg-slate-800/50;
+  @apply bg-slate-50 dark:bg-zinc-800/30;
 }
 
 .prose tbody tr:nth-child(even) {
-  @apply bg-slate-50/50 dark:bg-slate-900/30;
+  @apply bg-slate-50/50 dark:bg-zinc-900/30;
 }
 
 .prose tbody tr:nth-child(even):hover {
-  @apply bg-slate-100 dark:bg-slate-800/70;
+  @apply bg-slate-100 dark:bg-zinc-800/40;
+}
+
+/* Selection color */
+::selection {
+  background-color: hsl(228 94% 67% / 0.2);
+}
+
+.dark ::selection {
+  background-color: hsl(228 94% 67% / 0.3);
+  color: white;
+}
+
+/* Focus ring */
+*:focus-visible {
+  outline: 2px solid hsl(var(--ring) / 0.5);
+  outline-offset: 2px;
+  border-radius: 4px;
 }

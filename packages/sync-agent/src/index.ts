@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { Command } from 'commander'
 import pc from 'picocolors'
 import ora from 'ora'
