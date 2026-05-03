@@ -1,7 +1,7 @@
 import { Command } from 'commander'
 import pc from 'picocolors'
 import ora from 'ora'
-import { loadConfig, saveConfig, getDefaultClaudeDir } from './config'
+import { loadConfig, saveConfig, getDefaultClaudeDir, getOrCreateMachineId } from './config'
 import { fullSync, getSyncStatus } from './sync'
 import { startWatcher } from './watcher'
 import { createInterface } from 'readline'
@@ -11,7 +11,7 @@ const program = new Command()
 program
   .name('codememory-sync')
   .description('CodeMemory - sync AI coding sessions to cloud')
-  .version('0.1.0')
+  .version('0.2.0')
 
 program
   .command('init')
@@ -30,14 +30,18 @@ program
 
     rl.close()
 
+    const machineId = getOrCreateMachineId()
+
     saveConfig({
       serverUrl: serverUrl.replace(/\/$/, ''),
       apiKey,
       claudeDir: claudeDir || getDefaultClaudeDir(),
       syncInterval: parseInt(interval) || 60,
+      machineId,
     })
 
     console.log(pc.green('\nConfiguration saved!'))
+    console.log(pc.dim(`Machine ID: ${machineId}`))
     console.log(pc.dim('Run `codememory-sync start` to begin syncing.\n'))
   })
 
@@ -54,21 +58,21 @@ program
     console.log(pc.cyan('\nCodeMemory Sync Daemon\n'))
     console.log(pc.dim(`Server: ${config.serverUrl}`))
     console.log(pc.dim(`Claude dir: ${config.claudeDir}`))
+    console.log(pc.dim(`Machine ID: ${config.machineId}`))
 
     // Initial sync
     const spinner = ora('Running initial sync...').start()
     const result = await fullSync(config)
 
     if (result.error) {
-      spinner.fail(`Initial sync failed: ${result.error}`)
-      process.exit(1)
+      spinner.fail(`Initial sync had errors: ${result.error}`)
+    } else {
+      spinner.succeed(`Initial sync complete: ${result.syncedFiles} files synced, ${result.skippedFiles} unchanged (${result.totalFiles} total)`)
     }
-    spinner.succeed(`Initial sync complete: ${result.syncedSessions} sessions, ${result.syncedMessages} messages`)
 
     // Start watching
     startWatcher(config)
 
-    // Keep alive
     process.on('SIGINT', () => {
       console.log(pc.yellow('\nShutting down...'))
       process.exit(0)
@@ -83,8 +87,7 @@ program
 program
   .command('sync')
   .description('Run a one-time sync')
-  .option('--full', 'Force full sync (ignore cursor)')
-  .action(async (options) => {
+  .action(async () => {
     const config = loadConfig()
     if (!config) {
       console.error(pc.red('No configuration found. Run `codememory-sync init` first.'))
@@ -95,10 +98,10 @@ program
     const result = await fullSync(config)
 
     if (result.error) {
-      spinner.fail(`Sync failed: ${result.error}`)
-      process.exit(1)
+      spinner.fail(`Sync had errors: ${result.error}`)
+    } else {
+      spinner.succeed(`Synced ${result.syncedFiles} files, ${result.skippedFiles} unchanged (${result.totalFiles} total)`)
     }
-    spinner.succeed(`Synced ${result.syncedSessions} sessions, ${result.syncedMessages} messages`)
   })
 
 program
@@ -121,9 +124,15 @@ program
     spinner.stop()
 
     console.log(pc.cyan('\nSync Status\n'))
-    console.log(`  Last sync: ${status.lastSyncAt ? new Date(status.lastSyncAt).toLocaleString() : pc.dim('Never')}`)
-    console.log(`  Sessions:  ${status.totalSessions}`)
-    console.log(`  Messages:  ${status.totalMessages}\n`)
+    console.log(`  Last sync:  ${status.lastSyncAt ? new Date(status.lastSyncAt).toLocaleString() : pc.dim('Never')}`)
+    console.log(`  Machine ID: ${config.machineId}`)
+    console.log(`  Raw files:  ${status.totalRawFiles}`)
+    console.log(`  Sessions:   ${status.totalSessions}`)
+    console.log(`  Messages:   ${status.totalMessages}`)
+    if (status.pendingParseCount > 0) {
+      console.log(pc.yellow(`  Pending parse: ${status.pendingParseCount}`))
+    }
+    console.log()
   })
 
 program.parse()

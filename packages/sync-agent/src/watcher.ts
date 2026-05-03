@@ -9,7 +9,7 @@ export function startWatcher(config: SyncConfig): void {
   const watcher = watch(config.claudeDir, {
     persistent: true,
     ignoreInitial: true,
-    depth: 2,
+    depth: 10,
     awaitWriteFinish: {
       stabilityThreshold: 1000,
       pollInterval: 500,
@@ -43,7 +43,7 @@ async function triggerSync(config: SyncConfig): Promise<void> {
     if (result.error) {
       console.error(`[${time}] Sync failed: ${result.error}`)
     } else {
-      console.log(`[${time}] Synced ${result.syncedSessions} sessions, ${result.syncedMessages} messages`)
+      console.log(`[${time}] Synced ${result.syncedFiles} files, ${result.skippedFiles} unchanged`)
     }
   } finally {
     isSyncing = false

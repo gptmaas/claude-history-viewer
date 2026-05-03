@@ -1,37 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
-import { sessions, messages, syncState } from '@/lib/db/schema'
+import { rawFiles } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { validateApiKey, extractBearerToken } from '@/lib/auth-server'
+import { parseAllPendingRawFiles } from '@/lib/raw-file-parser'
 
-interface SyncSession {
-  sessionId: string
-  display: string
-  project: string
-  projectName: string
-  messageCount?: number
-  timestamp: number
-}
-
-interface SyncMessage {
-  type: string
-  role?: string
-  content: unknown
-  uuid?: string
-  timestamp?: string
-  sessionId?: string
-  metadata?: unknown
+interface RawFilePayload {
+  filePath: string
+  content: string
+  contentHash: string
+  mtime: string
+  size: number
 }
 
 interface SyncPayload {
-  sessions: SyncSession[]
-  messages: SyncMessage[]
-  syncCursor?: string
-  sourceType?: string
+  machineId: string
+  files: RawFilePayload[]
 }
 
 export async function POST(request: NextRequest) {
-  // Validate API key
   const token = extractBearerToken(request.headers.get('authorization'))
   if (!token) {
     return NextResponse.json({ error: 'Missing API key' }, { status: 401 })
@@ -46,125 +33,76 @@ export async function POST(request: NextRequest) {
 
   try {
     const body: SyncPayload = await request.json()
-    const { sessions: syncSessions, messages: syncMessages, sourceType } = body
+    const { machineId, files } = body
+
+    if (!machineId || !Array.isArray(files)) {
+      return NextResponse.json({ error: 'Invalid payload: machineId and files required' }, { status: 400 })
+    }
 
     const db = getDb()
-    let syncedSessions = 0
-    let syncedMessages = 0
+    let acceptedFiles = 0
+    let skippedFiles = 0
 
-    // Upsert sessions
-    for (const s of syncSessions) {
-      const startedAt = new Date(s.timestamp)
-
-      const existing = await db.query.sessions.findFirst({
+    // Store raw files (upsert by user+machine+path)
+    for (const file of files) {
+      const existing = await db.query.rawFiles.findFirst({
         where: and(
-          eq(sessions.userId, userId),
-          eq(sessions.sessionId, s.sessionId),
+          eq(rawFiles.userId, userId),
+          eq(rawFiles.machineId, machineId),
+          eq(rawFiles.filePath, file.filePath),
         ),
       })
+
+      if (existing && existing.contentHash === file.contentHash) {
+        skippedFiles++
+        continue
+      }
+
+      const lineCount = file.content.trim().split('\n').filter(Boolean).length
 
       if (existing) {
-        await db.update(sessions)
+        await db.update(rawFiles)
           .set({
-            display: s.display,
-            messageCount: s.messageCount ?? existing.messageCount,
-            lastMessageAt: startedAt,
+            content: file.content,
+            contentHash: file.contentHash,
+            fileSize: file.size,
+            lineCount,
+            mtime: file.mtime ? new Date(file.mtime) : null,
+            parsedAt: null,
+            parseVersion: 0,
             updatedAt: new Date(),
           })
-          .where(eq(sessions.id, existing.id))
+          .where(eq(rawFiles.id, existing.id))
       } else {
-        await db.insert(sessions).values({
+        await db.insert(rawFiles).values({
           userId,
-          sessionId: s.sessionId,
-          display: s.display,
-          project: s.project,
-          projectName: s.projectName,
-          messageCount: s.messageCount ?? 0,
-          startedAt,
-          lastMessageAt: startedAt,
+          machineId,
+          filePath: file.filePath,
+          content: file.content,
+          contentHash: file.contentHash,
+          fileSize: file.size,
+          lineCount,
+          mtime: file.mtime ? new Date(file.mtime) : null,
         })
       }
-      syncedSessions++
+      acceptedFiles++
     }
 
-    // Insert messages (skip duplicates by uuid)
-    for (const m of syncMessages) {
-      if (!m.uuid) continue
-
-      // Find the session for this message
-      const sessionId = m.sessionId
-      if (!sessionId) continue
-
-      const sessionRecord = await db.query.sessions.findFirst({
-        where: and(
-          eq(sessions.userId, userId),
-          eq(sessions.sessionId, sessionId),
-        ),
-      })
-
-      if (!sessionRecord) continue
-
-      // Check for duplicate
-      const existingMsg = await db.query.messages.findFirst({
-        where: eq(messages.uuid, m.uuid),
-      })
-
-      if (existingMsg) continue
-
-      // Build search text from content
-      const searchText = extractSearchText(m.content)
-
-      await db.insert(messages).values({
-        sessionId: sessionRecord.id,
-        userId,
-        type: m.type,
-        role: m.role ?? null,
-        content: m.content,
-        uuid: m.uuid,
-        timestamp: m.timestamp ? new Date(m.timestamp) : null,
-        metadata: m.metadata ?? null,
-        searchVector: searchText,
-      })
-      syncedMessages++
-    }
-
-    // Update sync state
-    await db.insert(syncState).values({
-      userId,
-      sourceType: sourceType || 'claude-code',
-      lastSyncedAt: new Date(),
-      syncCursor: new Date().toISOString(),
-    }).onConflictDoUpdate({
-      target: [syncState.userId, syncState.sourceType],
-      set: {
-        lastSyncedAt: new Date(),
-        syncCursor: new Date().toISOString(),
-        updatedAt: new Date(),
-      },
-    })
+    // Trigger parsing for newly stored files
+    const parseResult = await parseAllPendingRawFiles(userId, machineId)
 
     return NextResponse.json({
       success: true,
-      syncedSessions,
-      syncedMessages,
-      nextCursor: new Date().toISOString(),
+      acceptedFiles,
+      skippedFiles,
+      totalFiles: files.length,
+      parseResult,
     })
   } catch (error) {
     console.error('Error syncing data:', error)
     return NextResponse.json(
-      { error: 'Sync failed' },
+      { error: 'Sync failed', details: error instanceof Error ? error.message : undefined },
       { status: 500 }
     )
   }
-}
-
-function extractSearchText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .filter((block) => block?.type === 'text' && typeof block?.text === 'string')
-      .map((block) => block.text)
-      .join(' ')
-  }
-  return JSON.stringify(content)
 }

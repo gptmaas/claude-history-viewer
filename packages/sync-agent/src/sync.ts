@@ -1,37 +1,47 @@
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
+import { join } from 'path'
+import { homedir } from 'os'
+import { createHash } from 'crypto'
 import type { SyncConfig } from './config'
-import { parseHistoryFile, parseSessionFile, findSessionProjectDirs } from './parser'
+import { scanAllJsonlFiles } from './scanner'
 
 interface SyncResult {
-  syncedSessions: number
-  syncedMessages: number
+  syncedFiles: number
+  skippedFiles: number
+  totalFiles: number
   error?: string
 }
 
-interface ParsedSession {
-  sessionId: string
-  display: string
-  project: string
-  projectName: string
-  messageCount: number
-  timestamp: number
+interface FileCache {
+  [filePath: string]: string // filePath -> contentHash
 }
 
-interface ParsedMessage {
-  type: string
-  role?: string
-  content: unknown
-  uuid: string
-  sessionId: string
-  timestamp?: string
+const CACHE_FILE = join(homedir(), '.claude-sync', 'file-cache.json')
+const MAX_BATCH_SIZE = 5 * 1024 * 1024 // 5MB per batch
+
+function loadFileCache(): FileCache {
+  if (!existsSync(CACHE_FILE)) return {}
+  try {
+    return JSON.parse(readFileSync(CACHE_FILE, 'utf-8'))
+  } catch {
+    return {}
+  }
 }
 
-const BATCH_SIZE = 50 // sessions per batch
+function saveFileCache(cache: FileCache): void {
+  const dir = join(homedir(), '.claude-sync')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  writeFileSync(CACHE_FILE, JSON.stringify(cache))
+}
+
+function computeHash(content: string): string {
+  return createHash('sha256').update(content).digest('hex')
+}
 
 async function pushBatch(
   config: SyncConfig,
-  sessions: ParsedSession[],
-  messages: ParsedMessage[]
-): Promise<{ syncedSessions: number; syncedMessages: number; error?: string }> {
+  files: Array<{ filePath: string; content: string; contentHash: string; mtime: string; size: number }>
+): Promise<{ acceptedFiles: number; skippedFiles: number; error?: string }> {
   try {
     const response = await fetch(`${config.serverUrl}/api/sync/push`, {
       method: 'POST',
@@ -40,88 +50,119 @@ async function pushBatch(
         'Authorization': `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify({
-        sessions,
-        messages,
-        sourceType: 'claude-code',
+        machineId: config.machineId,
+        files,
       }),
     })
 
     if (!response.ok) {
       const body = await response.text()
-      return { syncedSessions: 0, syncedMessages: 0, error: `HTTP ${response.status}: ${body}` }
+      return { acceptedFiles: 0, skippedFiles: 0, error: `HTTP ${response.status}: ${body}` }
     }
 
     const data = await response.json()
-    return { syncedSessions: data.syncedSessions ?? 0, syncedMessages: data.syncedMessages ?? 0 }
+    return {
+      acceptedFiles: data.acceptedFiles ?? 0,
+      skippedFiles: data.skippedFiles ?? 0,
+    }
   } catch (error) {
     return {
-      syncedSessions: 0,
-      syncedMessages: 0,
+      acceptedFiles: 0,
+      skippedFiles: 0,
       error: error instanceof Error ? error.message : 'Network error',
     }
   }
 }
 
 export async function fullSync(config: SyncConfig): Promise<SyncResult> {
-  const sessions = parseHistoryFile(config.claudeDir)
-  const projectDirs = findSessionProjectDirs(config.claudeDir)
+  const allFiles = scanAllJsonlFiles(config.claudeDir)
+  const localCache = loadFileCache()
 
-  // Build a map of session -> messages
-  const sessionMessages = new Map<string, ParsedMessage[]>()
-  for (const session of sessions) {
-    for (const dir of projectDirs) {
-      const msgs = parseSessionFile(config.claudeDir, session.sessionId, dir)
-      if (msgs.length > 0) {
-        session.messageCount = msgs.length
-        sessionMessages.set(session.sessionId, msgs)
-        break
-      }
+  // Determine which files need uploading (new or changed)
+  const toUpload: Array<{ filePath: string; content: string; contentHash: string; mtime: string; size: number }> = []
+
+  for (const file of allFiles) {
+    const content = readFileSync(file.absolutePath, 'utf-8')
+    const hash = computeHash(content)
+
+    if (localCache[file.relativePath] === hash) {
+      continue // unchanged
     }
+
+    toUpload.push({
+      filePath: file.relativePath,
+      content,
+      contentHash: hash,
+      mtime: new Date(file.mtime).toISOString(),
+      size: file.size,
+    })
   }
 
-  if (sessions.length === 0) {
-    return { syncedSessions: 0, syncedMessages: 0 }
+  if (toUpload.length === 0) {
+    return { syncedFiles: 0, skippedFiles: allFiles.length, totalFiles: allFiles.length }
   }
 
-  let totalSyncedSessions = 0
-  let totalSyncedMessages = 0
+  // Batch by total payload size
+  let totalAccepted = 0
+  let totalSkipped = 0
   let lastError: string | undefined
 
-  // Process in batches
-  for (let i = 0; i < sessions.length; i += BATCH_SIZE) {
-    const batchSessions = sessions.slice(i, i + BATCH_SIZE)
-    const batchMessages: ParsedMessage[] = []
+  let batch: typeof toUpload = []
+  let batchSize = 0
 
-    for (const s of batchSessions) {
-      const msgs = sessionMessages.get(s.sessionId)
-      if (msgs) {
-        batchMessages.push(...msgs)
+  for (const file of toUpload) {
+    const entrySize = Buffer.byteLength(JSON.stringify(file), 'utf-8')
+    if (batchSize + entrySize > MAX_BATCH_SIZE && batch.length > 0) {
+      const result = await pushBatch(config, batch)
+      if (result.error) {
+        lastError = result.error
+      } else {
+        totalAccepted += result.acceptedFiles
+        totalSkipped += result.skippedFiles
+        // Update local cache for accepted files
+        for (const f of batch) {
+          localCache[f.filePath] = f.contentHash
+        }
       }
+      batch = []
+      batchSize = 0
     }
-
-    const result = await pushBatch(config, batchSessions, batchMessages)
-
-    if (result.error) {
-      lastError = result.error
-      // Continue with next batch instead of failing entirely
-      continue
-    }
-
-    totalSyncedSessions += result.syncedSessions
-    totalSyncedMessages += result.syncedMessages
+    batch.push(file)
+    batchSize += entrySize
   }
 
+  // Push remaining batch
+  if (batch.length > 0) {
+    const result = await pushBatch(config, batch)
+    if (result.error) {
+      lastError = result.error
+    } else {
+      totalAccepted += result.acceptedFiles
+      totalSkipped += result.skippedFiles
+      for (const f of batch) {
+        localCache[f.filePath] = f.contentHash
+      }
+    }
+  }
+
+  // Update local cache
+  saveFileCache(localCache)
+
   return {
-    syncedSessions: totalSyncedSessions,
-    syncedMessages: totalSyncedMessages,
+    syncedFiles: totalAccepted,
+    skippedFiles: totalSkipped,
+    totalFiles: allFiles.length,
     error: lastError,
   }
 }
 
 export async function getSyncStatus(config: SyncConfig): Promise<{
   lastSyncAt: string | null
+  machineId: string | null
   totalSessions: number
   totalMessages: number
+  totalRawFiles: number
+  pendingParseCount: number
   error?: string
 }> {
   try {
@@ -134,8 +175,11 @@ export async function getSyncStatus(config: SyncConfig): Promise<{
     if (!response.ok) {
       return {
         lastSyncAt: null,
+        machineId: null,
         totalSessions: 0,
         totalMessages: 0,
+        totalRawFiles: 0,
+        pendingParseCount: 0,
         error: `HTTP ${response.status}`,
       }
     }
@@ -144,8 +188,11 @@ export async function getSyncStatus(config: SyncConfig): Promise<{
   } catch (error) {
     return {
       lastSyncAt: null,
+      machineId: null,
       totalSessions: 0,
       totalMessages: 0,
+      totalRawFiles: 0,
+      pendingParseCount: 0,
       error: error instanceof Error ? error.message : 'Network error',
     }
   }
