@@ -5,6 +5,7 @@ import type {
   SearchResponse,
   DashboardStats,
   ProjectStats,
+  Machine,
 } from './types'
 import { loadSessionsList, loadSessionDetail, searchSessions } from './claude-history'
 import { getSessionCache } from './session-cache'
@@ -16,7 +17,8 @@ export class LocalDataSource implements DataSource {
     _userId: string,
     page: number,
     pageSize: number,
-    project?: string
+    project?: string,
+    _machineId?: string
   ): Promise<SessionsResponse> {
     startFileWatcher()
     const sessionCache = getSessionCache()
@@ -56,7 +58,7 @@ export class LocalDataSource implements DataSource {
     } as SessionDetail & { session: { date: string } }
   }
 
-  async searchSessions(_userId: string, keyword: string): Promise<SearchResponse> {
+  async searchSessions(_userId: string, keyword: string, _filters?: { project?: string; machineId?: string }): Promise<SearchResponse> {
     const results = await searchSessions(keyword)
     return {
       results,
@@ -72,7 +74,7 @@ export class LocalDataSource implements DataSource {
     return statsCache.getStats()
   }
 
-  async getProjects(_userId: string): Promise<ProjectStats[]> {
+  async getProjects(_userId: string, _machineId?: string): Promise<ProjectStats[]> {
     startFileWatcher()
     const sessions = await loadSessionsList()
 
@@ -96,5 +98,9 @@ export class LocalDataSource implements DataSource {
     }
 
     return Array.from(projectMap.values()).sort((a, b) => b.lastUpdate - a.lastUpdate)
+  }
+
+  async getMachines(_userId: string): Promise<Machine[]> {
+    return []
   }
 }

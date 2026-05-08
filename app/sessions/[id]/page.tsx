@@ -93,14 +93,15 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
     const c = scrollContainerRef.current; if (!c) return
     const h = () => {
       const cr = c.getBoundingClientRect(); const mid = c.scrollTop + cr.height / 2
-      let closest: { uuid: string; distance: number } | null = null
+      let closestUuid: string | null = null
+      let closestDist = Infinity
       messageRefs.current.forEach((el, uuid) => {
         const em = el.getBoundingClientRect().top + c.scrollTop + el.getBoundingClientRect().height / 2
         const d = Math.abs(em - mid)
-        const msg = messages.find(m => 'uuid' in m && m.uuid === uuid)
-        if (msg?.type === 'user' && (!closest || d < closest.distance)) closest = { uuid, distance: d }
+        const msg = messages.find((m: any) => 'uuid' in m && m.uuid === uuid)
+        if (msg?.type === 'user' && d < closestDist) { closestUuid = uuid; closestDist = d }
       })
-      if (closest) setActiveMessageUuid(closest.uuid)
+      if (closestUuid) setActiveMessageUuid(closestUuid)
     }
     c.addEventListener('scroll', h); h(); return () => c.removeEventListener('scroll', h)
   }, [messages])
@@ -150,7 +151,7 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
   function renderMessage(msg: Message) {
     const raw = showRawMessage === msg.uuid
     const rawBtn = (
-      <button onClick={() => setShowRawMessage(raw ? null : msg.uuid)} className="ml-auto p-1 rounded text-muted-foreground hover:text-foreground transition-colors" title={raw ? 'Show rendered' : 'Show raw'}>
+      <button onClick={() => setShowRawMessage(raw ? null : (msg.uuid ?? null))} className="ml-auto p-1 rounded text-muted-foreground hover:text-foreground transition-colors" title={raw ? 'Show rendered' : 'Show raw'}>
         {raw ? <Eye className="w-3 h-3" /> : <Code className="w-3 h-3" />}
       </button>
     )

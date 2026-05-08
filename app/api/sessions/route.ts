@@ -10,10 +10,11 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const pageSize = parseInt(searchParams.get('pageSize') || '50')
     const project = searchParams.get('project') || undefined
+    const machine = searchParams.get('machine') || undefined
 
     const userId = await getUserId()
     const ds = getDataSource()
-    const response = await ds.loadSessionsList(userId, page, pageSize, project)
+    const response = await ds.loadSessionsList(userId, page, pageSize, project, machine)
 
     return NextResponse.json(response)
   } catch (error) {

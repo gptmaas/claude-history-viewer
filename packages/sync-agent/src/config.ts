@@ -6,6 +6,7 @@ import { createHash } from 'crypto'
 const CONFIG_DIR = join(homedir(), '.claude-sync')
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
 const MACHINE_ID_FILE = join(CONFIG_DIR, 'machine-id')
+const MACHINE_NAME_FILE = join(CONFIG_DIR, 'machine-name')
 
 export interface SyncConfig {
   serverUrl: string
@@ -13,17 +14,21 @@ export interface SyncConfig {
   claudeDir: string
   syncInterval: number // seconds
   machineId: string
+  machineName: string
 }
 
 export function loadConfig(): SyncConfig | null {
   if (!existsSync(CONFIG_FILE)) return null
   try {
     const config = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'))
-    // Auto-generate machineId for configs that don't have one
+    // Auto-generate machineId/machineName for configs that don't have one
     if (!config.machineId) {
       config.machineId = getOrCreateMachineId()
-      saveConfig(config)
     }
+    if (!config.machineName) {
+      config.machineName = getOrCreateMachineName()
+    }
+    if (!config.machineId || !config.machineName) saveConfig(config)
     return config
   } catch {
     return null
@@ -52,4 +57,16 @@ export function getOrCreateMachineId(): string {
   }
   writeFileSync(MACHINE_ID_FILE, id)
   return id
+}
+
+export function getOrCreateMachineName(): string {
+  if (existsSync(MACHINE_NAME_FILE)) {
+    return readFileSync(MACHINE_NAME_FILE, 'utf-8').trim()
+  }
+  const name = hostname()
+  if (!existsSync(CONFIG_DIR)) {
+    mkdirSync(CONFIG_DIR, { recursive: true })
+  }
+  writeFileSync(MACHINE_NAME_FILE, name)
+  return name
 }

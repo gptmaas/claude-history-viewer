@@ -7,7 +7,7 @@ import { Search, X, ArrowLeft, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
-import type { SearchResult } from '@/lib/types'
+import type { SearchResult, Machine } from '@/lib/types'
 
 export default function SearchPage() {
   const [query, setQuery] = useState('')
@@ -15,9 +15,21 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const [machines, setMachines] = useState<Machine[]>([])
+  const [selectedMachine, setSelectedMachine] = useState<string>('all')
+  const [projectFilter, setProjectFilter] = useState('')
 
   useEffect(() => {
     inputRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_DATA_SOURCE_MODE === 'cloud') {
+      fetch('/api/machines')
+        .then((r) => r.json())
+        .then((data) => setMachines(data.machines ?? []))
+        .catch(console.error)
+    }
   }, [])
 
   async function performSearch(searchQuery: string) {
@@ -31,7 +43,11 @@ export default function SearchPage() {
     setHasSearched(true)
 
     try {
-      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`)
+      const params = new URLSearchParams({ q: searchQuery })
+      if (selectedMachine !== 'all') params.set('machine', selectedMachine)
+      if (projectFilter.trim()) params.set('project', projectFilter.trim())
+
+      const response = await fetch(`/api/search?${params.toString()}`)
       const data = await response.json()
       setResults(data.results)
     } catch (error) {
@@ -53,6 +69,12 @@ export default function SearchPage() {
     setHasSearched(false)
     inputRef.current?.focus()
   }
+
+  useEffect(() => {
+    if (hasSearched && query.trim()) {
+      performSearch(query)
+    }
+  }, [selectedMachine, projectFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function highlightSnippet(snippet: string, query: string) {
     if (!query) return snippet
@@ -106,6 +128,30 @@ export default function SearchPage() {
               </button>
             )}
           </form>
+
+          <div className="flex gap-3 mt-3">
+            <Input
+              type="search"
+              placeholder="Filter by project name..."
+              className="h-9 text-xs max-w-sm"
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+            />
+            {machines.length > 0 && (
+              <select
+                className="h-9 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs"
+                value={selectedMachine}
+                onChange={(e) => setSelectedMachine(e.target.value)}
+              >
+                <option value="all">All Machines</option>
+                {machines.map((m) => (
+                  <option key={m.machineId} value={m.machineId}>
+                    {m.machineName} ({m.sessionCount})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
       </header>
 

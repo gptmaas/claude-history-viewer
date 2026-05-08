@@ -9,6 +9,8 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const query = searchParams.get('q') || ''
+    const project = searchParams.get('project') || undefined
+    const machine = searchParams.get('machine') || undefined
 
     if (!query.trim()) {
       return NextResponse.json({ results: [], total: 0, query } as SearchResponse)
@@ -16,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     const userId = await getUserId()
     const ds = getDataSource()
-    const response = await ds.searchSessions(userId, query)
+    const response = await ds.searchSessions(userId, query, { project, machineId: machine })
 
     return NextResponse.json(response)
   } catch (error) {

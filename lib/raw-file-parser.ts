@@ -153,7 +153,7 @@ function extractSearchText(content: unknown): string {
   return JSON.stringify(content)
 }
 
-export async function parseAllPendingRawFiles(userId: string, machineId: string): Promise<{
+export async function parseAllPendingRawFiles(userId: string, machineId: string, machineName?: string): Promise<{
   parsedFiles: number
   totalSessions: number
   totalMessages: number
@@ -253,6 +253,7 @@ export async function parseAllPendingRawFiles(userId: string, machineId: string)
           messageCount: session.messageCount || existing.messageCount,
           lastMessageAt: startedAt,
           machineId,
+          machineName: machineName || existing.machineName,
           sourceFilePaths: sourcePaths ? Array.from(sourcePaths).join(',') : existing.sourceFilePaths,
           updatedAt: new Date(),
         })
@@ -261,6 +262,7 @@ export async function parseAllPendingRawFiles(userId: string, machineId: string)
       await db.insert(sessions).values({
         userId,
         machineId,
+        machineName: machineName || null,
         sessionId: session.sessionId,
         display: session.display || 'Untitled',
         project: session.project || 'unknown',
@@ -326,6 +328,7 @@ export async function parseAllPendingRawFiles(userId: string, machineId: string)
   await db.insert(syncState).values({
     userId,
     machineId,
+    machineName: machineName || null,
     sourceType: 'claude-code',
     lastSyncedAt: new Date(),
     syncCursor: new Date().toISOString(),

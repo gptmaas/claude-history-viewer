@@ -15,6 +15,7 @@ interface RawFilePayload {
 
 interface SyncPayload {
   machineId: string
+  machineName?: string
   files: RawFilePayload[]
 }
 
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body: SyncPayload = await request.json()
-    const { machineId, files } = body
+    const { machineId, machineName, files } = body
 
     if (!machineId || !Array.isArray(files)) {
       return NextResponse.json({ error: 'Invalid payload: machineId and files required' }, { status: 400 })
@@ -77,6 +78,7 @@ export async function POST(request: NextRequest) {
         await db.insert(rawFiles).values({
           userId,
           machineId,
+          machineName: machineName || '',
           filePath: file.filePath,
           content: file.content,
           contentHash: file.contentHash,
@@ -89,7 +91,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Trigger parsing for newly stored files
-    const parseResult = await parseAllPendingRawFiles(userId, machineId)
+    const parseResult = await parseAllPendingRawFiles(userId, machineId, machineName)
 
     return NextResponse.json({
       success: true,

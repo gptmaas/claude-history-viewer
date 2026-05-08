@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
+import { useEffect, useState, useCallback, useRef, Suspense, useMemo } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -17,6 +17,7 @@ import {
   Download,
   MessageSquare,
   TrendingUp,
+  Monitor,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,7 @@ import { UserMessageRenderer } from '@/components/user-message-renderer'
 import { formatDistanceToNow } from 'date-fns'
 import type { Message } from '@/lib/types'
 import type { Project } from '@/components/project-card'
+import type { Machine } from '@/lib/types'
 
 interface Session {
   sessionId: string
@@ -44,14 +46,41 @@ interface Session {
 function ProjectListView({ onSelect }: { onSelect: (project: string) => void }) {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
+  const [nameFilter, setNameFilter] = useState('')
+  const [machines, setMachines] = useState<Machine[]>([])
+  const [selectedMachine, setSelectedMachine] = useState<string>('all')
 
-  useEffect(() => {
-    fetch('/api/projects')
+  const loadProjects = useCallback((machine?: string) => {
+    setLoading(true)
+    const params = new URLSearchParams()
+    if (machine) params.set('machine', machine)
+    fetch(`/api/projects?${params.toString()}`)
       .then((r) => r.json())
       .then((data) => setProjects(data.projects ?? []))
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => { loadProjects() }, [loadProjects])
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_DATA_SOURCE_MODE === 'cloud') {
+      fetch('/api/machines')
+        .then((r) => r.json())
+        .then((data) => setMachines(data.machines ?? []))
+        .catch(console.error)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadProjects(selectedMachine === 'all' ? undefined : selectedMachine)
+  }, [selectedMachine]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filteredProjects = projects.filter((p) => {
+    if (!nameFilter.trim()) return true
+    const q = nameFilter.toLowerCase()
+    return p.projectName.toLowerCase().includes(q)
+  })
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -61,8 +90,38 @@ function ProjectListView({ onSelect }: { onSelect: (project: string) => void }) 
             项目
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {projects.length} projects total
+            {filteredProjects.length} projects total
           </p>
+        </div>
+
+        <div className="flex gap-3 mb-6">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Filter projects..."
+              className="pl-9 h-9 text-xs bg-card border-border focus:border-primary/50"
+              value={nameFilter}
+              onChange={(e) => setNameFilter(e.target.value)}
+            />
+          </div>
+          {machines.length > 0 && (
+            <div className="flex items-center gap-2 w-56">
+              <Monitor className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <select
+                className="h-9 flex-1 rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground focus:border-primary/50 focus:outline-none"
+                value={selectedMachine}
+                onChange={(e) => setSelectedMachine(e.target.value)}
+              >
+                <option value="all">All Machines</option>
+                {machines.map((m) => (
+                  <option key={m.machineId} value={m.machineId}>
+                    {m.machineName} ({m.sessionCount})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {loading ? (
@@ -71,14 +130,14 @@ function ProjectListView({ onSelect }: { onSelect: (project: string) => void }) 
               <div key={i} className="h-36 rounded-xl bg-card border border-border animate-pulse" />
             ))}
           </div>
-        ) : projects.length === 0 ? (
+        ) : filteredProjects.length === 0 ? (
           <div className="rounded-xl bg-card border border-border p-12 text-center">
             <FolderOpen className="w-8 h-8 text-muted-foreground/30 mx-auto mb-3" />
             <p className="text-sm text-muted-foreground">No projects found</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {projects.map((project) => (
+            {filteredProjects.map((project) => (
               <button
                 key={project.project}
                 onClick={() => onSelect(project.project)}

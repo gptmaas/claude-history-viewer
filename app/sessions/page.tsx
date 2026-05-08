@@ -8,6 +8,7 @@ import { Search, Filter, MessageSquare, FolderOpen, Clock, Copy } from 'lucide-r
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import type { Machine } from '@/lib/types'
 
 interface Session {
   sessionId: string
@@ -17,6 +18,8 @@ interface Session {
   timestamp: number
   date: string
   messageCount?: number
+  machineId?: string | null
+  machineName?: string | null
 }
 
 function SessionsPage() {
@@ -28,15 +31,26 @@ function SessionsPage() {
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [projects, setProjects] = useState<string[]>([])
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [machines, setMachines] = useState<Machine[]>([])
+  const [selectedMachine, setSelectedMachine] = useState<string>('all')
 
   useEffect(() => { loadSessions() }, [])
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_DATA_SOURCE_MODE === 'cloud') {
+      fetch('/api/machines')
+        .then((r) => r.json())
+        .then((data) => setMachines(data.machines ?? []))
+        .catch(console.error)
+    }
+  }, [])
 
   useEffect(() => {
     const projectParam = searchParams.get('project')
     if (projectParam && projects.length > 0) setSelectedProject(projectParam)
   }, [searchParams, projects])
 
-  useEffect(() => { filterSessions() }, [sessions, searchQuery, selectedProject]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { filterSessions() }, [sessions, searchQuery, selectedProject, selectedMachine]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadSessions() {
     try {
@@ -55,6 +69,7 @@ function SessionsPage() {
   function filterSessions() {
     let filtered = [...sessions]
     if (selectedProject !== 'all') filtered = filtered.filter((s) => s.project === selectedProject)
+    if (selectedMachine !== 'all') filtered = filtered.filter((s) => s.machineId === selectedMachine)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       filtered = filtered.filter((s) => s.display.toLowerCase().includes(q) || s.projectName.toLowerCase().includes(q))
@@ -84,6 +99,14 @@ function SessionsPage() {
               {projects.map((project) => (<option key={project} value={project}>{project.split('/').pop() || project}</option>))}
             </select>
           </div>
+          {machines.length > 0 && (
+            <div className="flex items-center gap-2 w-56">
+              <select className="h-9 flex-1 rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground focus:border-primary/50 focus:outline-none" value={selectedMachine} onChange={(e) => setSelectedMachine(e.target.value)}>
+                <option value="all">All Machines</option>
+                {machines.map((m) => (<option key={m.machineId} value={m.machineId}>{m.machineName} ({m.sessionCount})</option>))}
+              </select>
+            </div>
+          )}
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input type="search" placeholder="Search conversations..." className="pl-9 h-9 text-xs bg-card border-border focus:border-primary/50" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
@@ -97,7 +120,7 @@ function SessionsPage() {
             <div className="text-center">
               <MessageSquare className="mx-auto h-10 w-10 text-muted-foreground/20 mb-3" />
               <h2 className="text-sm font-medium text-foreground mb-1">No sessions found</h2>
-              <p className="text-xs text-muted-foreground">{searchQuery || selectedProject !== 'all' ? 'Try adjusting your filters' : 'Start a conversation with Claude Code to see it here'}</p>
+              <p className="text-xs text-muted-foreground">{searchQuery || selectedProject !== 'all' || selectedMachine !== 'all' ? 'Try adjusting your filters' : 'Start a conversation with Claude Code to see it here'}</p>
             </div>
           </div>
         ) : (

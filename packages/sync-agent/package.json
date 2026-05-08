@@ -1,6 +1,6 @@
 {
   "name": "codememory-sync",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "CodeMemory sync agent - sync AI coding sessions to cloud",
   "keywords": ["claude-code", "ai-coding", "sync", "codememory"],
   "license": "MIT",

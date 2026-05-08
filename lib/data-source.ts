@@ -4,14 +4,16 @@ import type {
   SearchResponse,
   DashboardStats,
   ProjectStats,
+  Machine,
 } from './types'
 
 export interface DataSource {
-  loadSessionsList(userId: string, page: number, pageSize: number, project?: string): Promise<SessionsResponse>
+  loadSessionsList(userId: string, page: number, pageSize: number, project?: string, machineId?: string): Promise<SessionsResponse>
   loadSessionDetail(userId: string, sessionId: string): Promise<SessionDetail | null>
-  searchSessions(userId: string, keyword: string): Promise<SearchResponse>
+  searchSessions(userId: string, keyword: string, filters?: { project?: string; machineId?: string }): Promise<SearchResponse>
   getDashboardStats(userId: string): Promise<DashboardStats>
-  getProjects(userId: string): Promise<ProjectStats[]>
+  getProjects(userId: string, machineId?: string): Promise<ProjectStats[]>
+  getMachines(userId: string): Promise<Machine[]>
 }
 
 import { LocalDataSource } from './local-data-source'

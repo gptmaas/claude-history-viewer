@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getDataSource } from '@/lib/data-source'
 import { getUserId } from '@/lib/get-user-id'
 
@@ -15,11 +15,12 @@ export interface ProjectsResponse {
   projects: Project[]
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const machine = request.nextUrl.searchParams.get('machine') || undefined
     const userId = await getUserId()
     const ds = getDataSource()
-    const projects = await ds.getProjects(userId)
+    const projects = await ds.getProjects(userId, machine)
 
     return NextResponse.json({ projects } satisfies ProjectsResponse)
   } catch (error) {

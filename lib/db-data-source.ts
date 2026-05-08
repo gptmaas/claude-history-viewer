@@ -7,6 +7,7 @@ import type {
   ProjectStats,
   Message,
   SearchResult,
+  Machine,
 } from './types'
 import { getDb } from './db'
 import { sessions, messages } from './db/schema'
@@ -17,13 +18,17 @@ export class DbDataSource implements DataSource {
     userId: string,
     page: number,
     pageSize: number,
-    project?: string
+    project?: string,
+    machineId?: string
   ): Promise<SessionsResponse> {
     const db = getDb()
 
     const conditions = [eq(sessions.userId, userId)]
     if (project) {
       conditions.push(eq(sessions.project, project))
+    }
+    if (machineId) {
+      conditions.push(eq(sessions.machineId, machineId))
     }
 
     const where = conditions.length === 1 ? conditions[0] : and(...conditions)
@@ -51,6 +56,8 @@ export class DbDataSource implements DataSource {
         timestamp: s.startedAt.getTime(),
         date: s.startedAt.toISOString(),
         messageCount: s.messageCount ?? undefined,
+        machineId: s.machineId,
+        machineName: s.machineName,
       })),
       total,
       page,
@@ -84,6 +91,8 @@ export class DbDataSource implements DataSource {
         timestamp: session.startedAt.getTime(),
         date: session.startedAt.toISOString() as unknown as Date,
         messageCount: session.messageCount ?? undefined,
+        machineId: session.machineId,
+        machineName: session.machineName,
       },
       messages: msgs.map((m) => ({
         type: m.type,
@@ -97,8 +106,17 @@ export class DbDataSource implements DataSource {
     }
   }
 
-  async searchSessions(userId: string, keyword: string): Promise<SearchResponse> {
+  async searchSessions(userId: string, keyword: string, filters?: { project?: string; machineId?: string }): Promise<SearchResponse> {
     const db = getDb()
+
+    // Build session-level filter conditions
+    const sessionConditions = [eq(sessions.userId, userId)]
+    if (filters?.machineId) {
+      sessionConditions.push(eq(sessions.machineId, filters.machineId))
+    }
+    if (filters?.project) {
+      sessionConditions.push(ilike(sessions.projectName, `%${filters.project}%`))
+    }
 
     // Search in messages using ILIKE for text search
     const matchingMessages = await db.query.messages.findMany({
@@ -109,14 +127,16 @@ export class DbDataSource implements DataSource {
       limit: 1000,
     })
 
-    // Get unique session IDs
+    // Get unique session IDs, then filter by machine/project
     const sessionIds = new Set(matchingMessages.map((m) => m.sessionId))
 
     const results: SearchResult[] = []
 
+    const sessionFilterWhere = sessionConditions.length === 1 ? sessionConditions[0] : and(...sessionConditions)
+
     for (const sid of sessionIds) {
       const session = await db.query.sessions.findFirst({
-        where: eq(sessions.id, sid),
+        where: and(eq(sessions.id, sid), sessionFilterWhere),
       })
 
       if (!session) continue
@@ -163,6 +183,8 @@ export class DbDataSource implements DataSource {
           timestamp: session.startedAt.getTime(),
           date: session.startedAt.toISOString() as unknown as Date,
           messageCount: session.messageCount ?? undefined,
+          machineId: session.machineId,
+          machineName: session.machineName,
         },
         matchedMessages,
         relevanceScore: matchedMessages.length + (titleMatch ? 1 : 0),
@@ -170,11 +192,18 @@ export class DbDataSource implements DataSource {
     }
 
     // Also search session titles
+    const titleWhereConditions = [
+      eq(sessions.userId, userId),
+      ilike(sessions.display, `%${keyword}%`),
+    ]
+    if (filters?.machineId) {
+      titleWhereConditions.push(eq(sessions.machineId, filters.machineId))
+    }
+    if (filters?.project) {
+      titleWhereConditions.push(ilike(sessions.projectName, `%${filters.project}%`))
+    }
     const titleMatches = await db.query.sessions.findMany({
-      where: and(
-        eq(sessions.userId, userId),
-        ilike(sessions.display, `%${keyword}%`),
-      ),
+      where: and(...titleWhereConditions),
     })
 
     for (const session of titleMatches) {
@@ -189,6 +218,8 @@ export class DbDataSource implements DataSource {
           timestamp: session.startedAt.getTime(),
           date: session.startedAt.toISOString() as unknown as Date,
           messageCount: session.messageCount ?? undefined,
+          machineId: session.machineId,
+          machineName: session.machineName,
         },
         matchedMessages: [],
         relevanceScore: 1,
@@ -321,11 +352,17 @@ export class DbDataSource implements DataSource {
     }
   }
 
-  async getProjects(userId: string): Promise<ProjectStats[]> {
+  async getProjects(userId: string, machineId?: string): Promise<ProjectStats[]> {
     const db = getDb()
 
+    const conditions = [eq(sessions.userId, userId)]
+    if (machineId) {
+      conditions.push(eq(sessions.machineId, machineId))
+    }
+    const where = conditions.length === 1 ? conditions[0] : and(...conditions)
+
     const allSessions = await db.query.sessions.findMany({
-      where: eq(sessions.userId, userId),
+      where,
       orderBy: [desc(sessions.lastMessageAt)],
     })
 
@@ -350,5 +387,28 @@ export class DbDataSource implements DataSource {
 
     return Array.from(projectMap.values())
       .sort((a, b) => b.lastUpdate - a.lastUpdate)
+  }
+
+  async getMachines(userId: string): Promise<Machine[]> {
+    const db = getDb()
+
+    const rows = await db
+      .select({
+        machineId: sessions.machineId,
+        machineName: sessions.machineName,
+        count: count(),
+      })
+      .from(sessions)
+      .where(eq(sessions.userId, userId))
+      .groupBy(sessions.machineId, sessions.machineName)
+
+    return rows
+      .filter((r) => r.machineId != null)
+      .map((r) => ({
+        machineId: r.machineId!,
+        machineName: r.machineName || r.machineId!,
+        sessionCount: r.count,
+      }))
+      .sort((a, b) => b.sessionCount - a.sessionCount)
   }
 }

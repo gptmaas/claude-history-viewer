@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       lastSyncAt: state?.lastSyncedAt?.toISOString() ?? null,
       machineId: state?.machineId ?? null,
+      machineName: state?.machineName ?? null,
       totalSessions: sessionCount?.count ?? 0,
       totalMessages: messageCount?.count ?? 0,
       totalRawFiles: rawFileCount?.count ?? 0,

@@ -51,6 +51,7 @@ async function pushBatch(
       },
       body: JSON.stringify({
         machineId: config.machineId,
+        machineName: config.machineName,
         files,
       }),
     })

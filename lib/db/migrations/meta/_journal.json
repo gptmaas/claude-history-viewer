@@ -15,6 +15,13 @@
       "when": 1777776146935,
       "tag": "0001_orange_sentinel",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777778794796,
+      "tag": "0002_sturdy_human_robot",
+      "breakpoints": true
     }
   ]
 }

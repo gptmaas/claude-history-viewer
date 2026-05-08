@@ -1,7 +1,7 @@
 import { Command } from 'commander'
 import pc from 'picocolors'
 import ora from 'ora'
-import { loadConfig, saveConfig, getDefaultClaudeDir, getOrCreateMachineId } from './config'
+import { loadConfig, saveConfig, getDefaultClaudeDir, getOrCreateMachineId, getOrCreateMachineName } from './config'
 import { fullSync, getSyncStatus } from './sync'
 import { startWatcher } from './watcher'
 import { createInterface } from 'readline'
@@ -31,6 +31,7 @@ program
     rl.close()
 
     const machineId = getOrCreateMachineId()
+    const machineName = getOrCreateMachineName()
 
     saveConfig({
       serverUrl: serverUrl.replace(/\/$/, ''),
@@ -38,10 +39,11 @@ program
       claudeDir: claudeDir || getDefaultClaudeDir(),
       syncInterval: parseInt(interval) || 60,
       machineId,
+      machineName,
     })
 
     console.log(pc.green('\nConfiguration saved!'))
-    console.log(pc.dim(`Machine ID: ${machineId}`))
+    console.log(pc.dim(`Machine: ${machineName} (${machineId})`))
     console.log(pc.dim('Run `codememory-sync start` to begin syncing.\n'))
   })
 
@@ -58,7 +60,7 @@ program
     console.log(pc.cyan('\nCodeMemory Sync Daemon\n'))
     console.log(pc.dim(`Server: ${config.serverUrl}`))
     console.log(pc.dim(`Claude dir: ${config.claudeDir}`))
-    console.log(pc.dim(`Machine ID: ${config.machineId}`))
+    console.log(pc.dim(`Machine: ${config.machineName} (${config.machineId})`))
 
     // Initial sync
     const spinner = ora('Running initial sync...').start()
@@ -125,7 +127,7 @@ program
 
     console.log(pc.cyan('\nSync Status\n'))
     console.log(`  Last sync:  ${status.lastSyncAt ? new Date(status.lastSyncAt).toLocaleString() : pc.dim('Never')}`)
-    console.log(`  Machine ID: ${config.machineId}`)
+    console.log(`  Machine:    ${config.machineName} (${config.machineId})`)
     console.log(`  Raw files:  ${status.totalRawFiles}`)
     console.log(`  Sessions:   ${status.totalSessions}`)
     console.log(`  Messages:   ${status.totalMessages}`)

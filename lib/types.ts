@@ -16,6 +16,8 @@ export interface Session {
   timestamp: number
   date: Date
   messageCount?: number
+  machineId?: string | null
+  machineName?: string | null
 }
 
 // Message types from session detail JSONL
@@ -108,6 +110,8 @@ export interface SessionWithISODate {
   timestamp: number
   date: string  // ISO string for JSON serialization
   messageCount?: number
+  machineId?: string | null
+  machineName?: string | null
 }
 
 export interface SessionsResponse {
@@ -153,4 +157,15 @@ export interface DashboardStats {
   topProjects: ProjectStats[]
   dailyMessageCounts: DailyMessageCount[]
   lastUpdated?: number
+}
+
+// Machine types
+export interface Machine {
+  machineId: string
+  machineName: string
+  sessionCount: number
+}
+
+export interface MachinesResponse {
+  machines: Machine[]
 }
