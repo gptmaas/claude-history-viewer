@@ -6,6 +6,7 @@ import type {
   DashboardStats,
   ProjectStats,
   Machine,
+  AnalyticsStats,
 } from './types'
 import { loadSessionsList, loadSessionDetail, searchSessions } from './claude-history'
 import { getSessionCache } from './session-cache'
@@ -18,7 +19,8 @@ export class LocalDataSource implements DataSource {
     page: number,
     pageSize: number,
     project?: string,
-    _machineId?: string
+    _machineId?: string,
+    _sourceType?: string
   ): Promise<SessionsResponse> {
     startFileWatcher()
     const sessionCache = getSessionCache()
@@ -74,7 +76,7 @@ export class LocalDataSource implements DataSource {
     return statsCache.getStats()
   }
 
-  async getProjects(_userId: string, _machineId?: string): Promise<ProjectStats[]> {
+  async getProjects(_userId: string, _machineId?: string, _sourceType?: string): Promise<ProjectStats[]> {
     startFileWatcher()
     const sessions = await loadSessionsList()
 
@@ -102,5 +104,40 @@ export class LocalDataSource implements DataSource {
 
   async getMachines(_userId: string): Promise<Machine[]> {
     return []
+  }
+
+  async getAnalyticsStats(_userId: string, _dateRange?: { start: Date; end: Date }): Promise<AnalyticsStats> {
+    // Local mode doesn't support full analytics - return empty/default stats
+    return {
+      dailyActivity: [],
+      weeklyActivity: [],
+      toolUsageStats: [],
+      toolUsageTrend: [],
+      sessionDurationStats: {
+        averageMinutes: 0,
+        medianMinutes: 0,
+        longestSession: null,
+        distribution: [],
+      },
+      sessionsByHourOfDay: Array.from({ length: 24 }, (_, i) => ({ hour: i, count: 0 })),
+      sessionsByDayOfWeek: [
+        { day: 0, dayName: '周日', count: 0 },
+        { day: 1, dayName: '周一', count: 0 },
+        { day: 2, dayName: '周二', count: 0 },
+        { day: 3, dayName: '周三', count: 0 },
+        { day: 4, dayName: '周四', count: 0 },
+        { day: 5, dayName: '周五', count: 0 },
+        { day: 6, dayName: '周六', count: 0 },
+      ],
+      projectActivityHeatmap: [],
+      sourceBreakdown: [],
+      estimatedTokenUsage: {
+        estimatedInputTokens: 0,
+        estimatedOutputTokens: 0,
+        estimatedTotalTokens: 0,
+        bySource: [],
+        disclaimer: '本地模式下不支持 Token 估算',
+      },
+    }
   }
 }

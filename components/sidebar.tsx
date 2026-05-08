@@ -13,6 +13,7 @@ import {
   Cpu,
   Sun,
   Moon,
+  BarChart3,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -21,6 +22,7 @@ const navItems = [
   { href: '/projects', label: '项目', icon: FolderOpen },
   { href: '/sessions', label: '会话', icon: MessageSquare },
   { href: '/search', label: '搜索', icon: Search },
+  { href: '/analytics', label: '分析', icon: BarChart3 },
 ]
 
 function useTheme() {
@@ -46,7 +48,7 @@ export function Sidebar() {
     <aside className="w-[240px] h-screen flex flex-col bg-[hsl(var(--sidebar-bg))] border-r border-[hsl(var(--sidebar-border))] shrink-0 select-none">
       {/* Brand */}
       <div className="px-4 h-14 flex items-center gap-3 border-b border-[hsl(var(--sidebar-border))]">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
           <Cpu className="w-4 h-4 text-white" />
         </div>
         <div>
@@ -108,7 +110,7 @@ export function Sidebar() {
 
         {session ? (
           <div className="flex items-center gap-2.5 px-2 py-2 rounded-md">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-[10px] font-semibold text-white">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-[10px] font-semibold text-white">
               {session.user?.email?.[0]?.toUpperCase() || 'U'}
             </div>
             <div className="flex-1 min-w-0">

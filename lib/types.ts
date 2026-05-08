@@ -18,6 +18,7 @@ export interface Session {
   messageCount?: number
   machineId?: string | null
   machineName?: string | null
+  sourceType?: string | null
 }
 
 // Message types from session detail JSONL
@@ -168,4 +169,85 @@ export interface Machine {
 
 export interface MachinesResponse {
   machines: Machine[]
+}
+
+// Analytics types (v0.3)
+export interface AnalyticsStats {
+  dailyActivity: DailyActivityPoint[]
+  weeklyActivity: WeeklyActivityPoint[]
+  toolUsageStats: ToolUsageStat[]
+  toolUsageTrend: ToolUsageTrendPoint[]
+  sessionDurationStats: SessionDurationStats
+  sessionsByHourOfDay: HourOfDayStat[]
+  sessionsByDayOfWeek: DayOfWeekStat[]
+  projectActivityHeatmap: ProjectHeatmapPoint[]
+  sourceBreakdown: SourceBreakdown[]
+  estimatedTokenUsage: TokenUsageEstimate
+}
+
+export interface DailyActivityPoint {
+  date: string
+  userMessages: number
+  assistantMessages: number
+  toolUses: number
+  sessions: number
+}
+
+export interface WeeklyActivityPoint {
+  weekStart: string
+  totalMessages: number
+  sessions: number
+  activeDays: number
+}
+
+export interface ToolUsageStat {
+  toolName: string
+  count: number
+  percentage: number
+  trend: 'up' | 'down' | 'stable'
+}
+
+export interface ToolUsageTrendPoint {
+  date: string
+  [toolName: string]: number | string
+}
+
+export interface SessionDurationStats {
+  averageMinutes: number
+  medianMinutes: number
+  longestSession: { sessionId: string; display: string; minutes: number } | null
+  distribution: { range: string; count: number }[]
+}
+
+export interface HourOfDayStat {
+  hour: number
+  count: number
+}
+
+export interface DayOfWeekStat {
+  day: number
+  dayName: string
+  count: number
+}
+
+export interface ProjectHeatmapPoint {
+  project: string
+  date: string
+  messageCount: number
+  sessionCount: number
+}
+
+export interface SourceBreakdown {
+  sourceType: string
+  sessionCount: number
+  messageCount: number
+  percentage: number
+}
+
+export interface TokenUsageEstimate {
+  estimatedInputTokens: number
+  estimatedOutputTokens: number
+  estimatedTotalTokens: number
+  bySource: { sourceType: string; inputTokens: number; outputTokens: number }[]
+  disclaimer: string
 }

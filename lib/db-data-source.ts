@@ -8,6 +8,17 @@ import type {
   Message,
   SearchResult,
   Machine,
+  AnalyticsStats,
+  DailyActivityPoint,
+  WeeklyActivityPoint,
+  ToolUsageStat,
+  ToolUsageTrendPoint,
+  SessionDurationStats,
+  HourOfDayStat,
+  DayOfWeekStat,
+  ProjectHeatmapPoint,
+  SourceBreakdown,
+  TokenUsageEstimate,
 } from './types'
 import { getDb } from './db'
 import { sessions, messages } from './db/schema'
@@ -19,7 +30,8 @@ export class DbDataSource implements DataSource {
     page: number,
     pageSize: number,
     project?: string,
-    machineId?: string
+    machineId?: string,
+    sourceType?: string
   ): Promise<SessionsResponse> {
     const db = getDb()
 
@@ -29,6 +41,9 @@ export class DbDataSource implements DataSource {
     }
     if (machineId) {
       conditions.push(eq(sessions.machineId, machineId))
+    }
+    if (sourceType) {
+      conditions.push(eq(sessions.sourceType, sourceType))
     }
 
     const where = conditions.length === 1 ? conditions[0] : and(...conditions)
@@ -58,6 +73,7 @@ export class DbDataSource implements DataSource {
         messageCount: s.messageCount ?? undefined,
         machineId: s.machineId,
         machineName: s.machineName,
+        sourceType: s.sourceType,
       })),
       total,
       page,
@@ -352,12 +368,15 @@ export class DbDataSource implements DataSource {
     }
   }
 
-  async getProjects(userId: string, machineId?: string): Promise<ProjectStats[]> {
+  async getProjects(userId: string, machineId?: string, sourceType?: string): Promise<ProjectStats[]> {
     const db = getDb()
 
     const conditions = [eq(sessions.userId, userId)]
     if (machineId) {
       conditions.push(eq(sessions.machineId, machineId))
+    }
+    if (sourceType) {
+      conditions.push(eq(sessions.sourceType, sourceType))
     }
     const where = conditions.length === 1 ? conditions[0] : and(...conditions)
 
@@ -410,5 +429,434 @@ export class DbDataSource implements DataSource {
         sessionCount: r.count,
       }))
       .sort((a, b) => b.sessionCount - a.sessionCount)
+  }
+
+  async getAnalyticsStats(userId: string, dateRange?: { start: Date; end: Date }): Promise<AnalyticsStats> {
+    const db = getDb()
+    const startDate = dateRange?.start || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    const endDate = dateRange?.end || new Date()
+
+    // Daily activity: group messages by day and type
+    const dailyMsgData = await db
+      .select({
+        day: sql<string>`date_trunc('day', ${messages.timestamp})::text`,
+        type: messages.type,
+        count: count(),
+      })
+      .from(messages)
+      .where(and(
+        eq(messages.userId, userId),
+        gte(messages.timestamp, startDate),
+      ))
+      .groupBy(sql`date_trunc('day', ${messages.timestamp})`, messages.type)
+      .orderBy(sql`date_trunc('day', ${messages.timestamp})`)
+
+    const dailyMap = new Map<string, DailyActivityPoint>()
+    for (const row of dailyMsgData) {
+      const date = row.day.slice(0, 10)
+      if (!dailyMap.has(date)) {
+        dailyMap.set(date, { date, userMessages: 0, assistantMessages: 0, toolUses: 0, sessions: 0 })
+      }
+      const point = dailyMap.get(date)!
+      if (row.type === 'user') point.userMessages = Number(row.count)
+      else if (row.type === 'assistant') point.assistantMessages = Number(row.count)
+      else if (row.type === 'tool_use') point.toolUses = Number(row.count)
+    }
+
+    // Count sessions per day
+    const sessionDays = await db
+      .select({
+        day: sql<string>`date_trunc('day', ${sessions.startedAt})::text`,
+        count: count(),
+      })
+      .from(sessions)
+      .where(and(
+        eq(sessions.userId, userId),
+        gte(sessions.startedAt, startDate),
+      ))
+      .groupBy(sql`date_trunc('day', ${sessions.startedAt})`)
+
+    for (const row of sessionDays) {
+      const date = row.day.slice(0, 10)
+      if (!dailyMap.has(date)) {
+        dailyMap.set(date, { date, userMessages: 0, assistantMessages: 0, toolUses: 0, sessions: 0 })
+      }
+      dailyMap.get(date)!.sessions = Number(row.count)
+    }
+
+    const dailyActivity: DailyActivityPoint[] = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date))
+
+    // Weekly activity
+    const weeklyMsgData = await db
+      .select({
+        week: sql<string>`date_trunc('week', ${messages.timestamp})::text`,
+        count: count(),
+      })
+      .from(messages)
+      .where(and(
+        eq(messages.userId, userId),
+        gte(messages.timestamp, startDate),
+      ))
+      .groupBy(sql`date_trunc('week', ${messages.timestamp})`)
+      .orderBy(sql`date_trunc('week', ${messages.timestamp})`)
+
+    const weeklySessionData = await db
+      .select({
+        week: sql<string>`date_trunc('week', ${sessions.startedAt})::text`,
+        count: count(),
+      })
+      .from(sessions)
+      .where(and(
+        eq(sessions.userId, userId),
+        gte(sessions.startedAt, startDate),
+      ))
+      .groupBy(sql`date_trunc('week', ${sessions.startedAt})`)
+
+    const weeklyMap = new Map<string, { weekStart: string; totalMessages: number; sessions: number; activeDays: Set<string> }>()
+    for (const row of weeklyMsgData) {
+      const week = row.week.slice(0, 10)
+      if (!weeklyMap.has(week)) {
+        weeklyMap.set(week, { weekStart: week, totalMessages: 0, sessions: 0, activeDays: new Set() })
+      }
+      weeklyMap.get(week)!.totalMessages += Number(row.count)
+    }
+    for (const row of weeklySessionData) {
+      const week = row.week.slice(0, 10)
+      if (!weeklyMap.has(week)) {
+        weeklyMap.set(week, { weekStart: week, totalMessages: 0, sessions: 0, activeDays: new Set() })
+      }
+      weeklyMap.get(week)!.sessions += Number(row.count)
+    }
+    for (const day of dailyMap.keys()) {
+      const weekStart = day.slice(0, 10)
+      if (weeklyMap.has(weekStart)) {
+        weeklyMap.get(weekStart)!.activeDays.add(day)
+      }
+    }
+    const weeklyActivity: WeeklyActivityPoint[] = Array.from(weeklyMap.values()).map(w => ({
+      weekStart: w.weekStart,
+      totalMessages: w.totalMessages,
+      sessions: w.sessions,
+      activeDays: w.activeDays.size,
+    })).sort((a, b) => a.weekStart.localeCompare(b.weekStart))
+
+    // Tool usage stats
+    const toolUsageRows = await db
+      .select({
+        toolName: sql<string>`(${messages.content}->0->>'name')`,
+        count: count(),
+      })
+      .from(messages)
+      .where(and(
+        eq(messages.userId, userId),
+        eq(messages.type, 'assistant'),
+      ))
+      .groupBy(sql`(${messages.content}->0->>'name')`)
+      .orderBy(count())
+      .limit(20)
+
+    const totalToolCalls = toolUsageRows.reduce((sum, r) => sum + Number(r.count), 0)
+    const toolUsageStats: ToolUsageStat[] = toolUsageRows.map(r => ({
+      toolName: (r.toolName as string) || 'unknown',
+      count: Number(r.count),
+      percentage: totalToolCalls > 0 ? (Number(r.count) / totalToolCalls) * 100 : 0,
+      trend: 'stable' as const,
+    }))
+
+    // Tool usage trend (last 14 days per tool)
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
+    const recentToolData = await db
+      .select({
+        day: sql<string>`date_trunc('day', ${messages.timestamp})::text`,
+        content: messages.content,
+      })
+      .from(messages)
+      .where(and(
+        eq(messages.userId, userId),
+        eq(messages.type, 'assistant'),
+        gte(messages.timestamp, fourteenDaysAgo),
+      ))
+
+    const toolTrendMap = new Map<string, Map<string, number>>()
+    for (const row of recentToolData) {
+      const date = row.day.slice(0, 10)
+      if (Array.isArray(row.content)) {
+        for (const block of row.content) {
+          if (block?.type === 'tool_use' && block?.name) {
+            if (!toolTrendMap.has(block.name)) {
+              toolTrendMap.set(block.name, new Map())
+            }
+            const dayCount = toolTrendMap.get(block.name)!.get(date) || 0
+            toolTrendMap.get(block.name)!.set(date, dayCount + 1)
+          }
+        }
+      }
+    }
+
+    const toolUsageTrendDates = new Set<string>()
+    for (const dayMap of toolTrendMap.values()) {
+      for (const date of dayMap.keys()) {
+        toolUsageTrendDates.add(date)
+      }
+    }
+    const sortedDates = Array.from(toolUsageTrendDates).sort()
+    const topTools = toolUsageStats.slice(0, 5).map(t => t.toolName)
+    const toolUsageTrend: ToolUsageTrendPoint[] = sortedDates.map(date => {
+      const point: ToolUsageTrendPoint = { date }
+      for (const tool of topTools) {
+        point[tool] = toolTrendMap.get(tool)?.get(date) || 0
+      }
+      return point
+    })
+
+    // Session duration stats
+    const durationRows = await db
+      .select({
+        sessionId: sessions.sessionId,
+        display: sessions.display,
+        durationSeconds: sessions.durationSeconds,
+      })
+      .from(sessions)
+      .where(and(
+        eq(sessions.userId, userId),
+        gte(sessions.startedAt, startDate),
+      ))
+
+    const durations = durationRows
+      .filter(r => r.durationSeconds != null)
+      .map(r => ({ sessionId: r.sessionId, display: r.display, minutes: Math.floor(r.durationSeconds! / 60) }))
+
+    const avgMinutes = durations.length > 0
+      ? durations.reduce((sum, d) => sum + d.minutes, 0) / durations.length
+      : 0
+
+    const sortedDurations = [...durations].sort((a, b) => a.minutes - b.minutes)
+    const medianMinutes = sortedDurations.length > 0
+      ? sortedDurations[Math.floor(sortedDurations.length / 2)].minutes
+      : 0
+
+    const longestSession = durations.length > 0
+      ? durations.reduce((max, d) => d.minutes > max.minutes ? d : max, durations[0])
+      : null
+
+    const distribution: { range: string; count: number }[] = [
+      { range: '<5m', count: 0 },
+      { range: '5-15m', count: 0 },
+      { range: '15-30m', count: 0 },
+      { range: '30-60m', count: 0 },
+      { range: '1-2h', count: 0 },
+      { range: '>2h', count: 0 },
+    ]
+    for (const d of durations) {
+      if (d.minutes < 5) distribution[0].count++
+      else if (d.minutes < 15) distribution[1].count++
+      else if (d.minutes < 30) distribution[2].count++
+      else if (d.minutes < 60) distribution[3].count++
+      else if (d.minutes < 120) distribution[4].count++
+      else distribution[5].count++
+    }
+
+    const sessionDurationStats: SessionDurationStats = {
+      averageMinutes: Math.round(avgMinutes * 10) / 10,
+      medianMinutes,
+      longestSession,
+      distribution,
+    }
+
+    // Sessions by hour of day
+    const hourlyRows = await db
+      .select({
+        hour: sql<number>`EXTRACT(HOUR FROM ${messages.timestamp})`,
+        count: count(),
+      })
+      .from(messages)
+      .where(and(
+        eq(messages.userId, userId),
+        gte(messages.timestamp, startDate),
+      ))
+      .groupBy(sql`EXTRACT(HOUR FROM ${messages.timestamp})`)
+
+    const sessionsByHourOfDay: HourOfDayStat[] = Array.from({ length: 24 }, (_, i) => {
+      const row = hourlyRows.find(r => Number(r.hour) === i)
+      return { hour: i, count: row ? Number(row.count) : 0 }
+    })
+
+    // Sessions by day of week
+    const dayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+    const dowRows = await db
+      .select({
+        dow: sql<number>`EXTRACT(DOW FROM ${messages.timestamp})`,
+        count: count(),
+      })
+      .from(messages)
+      .where(and(
+        eq(messages.userId, userId),
+        gte(messages.timestamp, startDate),
+      ))
+      .groupBy(sql`EXTRACT(DOW FROM ${messages.timestamp})`)
+
+    const sessionsByDayOfWeek: DayOfWeekStat[] = Array.from({ length: 7 }, (_, i) => {
+      const row = dowRows.find(r => Number(r.dow) === i)
+      return { day: i, dayName: dayNames[i], count: row ? Number(row.count) : 0 }
+    })
+
+    // Project activity heatmap
+    // Query sessions in date range
+    const sessionProjects = await db
+      .select({ project: sessions.project, day: sql<string>`${sessions.startedAt}::date` })
+      .from(sessions)
+      .where(and(
+        eq(sessions.userId, userId),
+        gte(sessions.startedAt, startDate),
+      ))
+
+    // Query messages in date range
+    const messageProjects = await db
+      .select({
+        project: sessions.project,
+        day: sql<string>`${messages.timestamp}::date`,
+      })
+      .from(messages)
+      .innerJoin(sessions, eq(messages.sessionId, sessions.id))
+      .where(and(
+        eq(sessions.userId, userId),
+        gte(sessions.startedAt, startDate),
+      ))
+
+    // Group by project and day
+    const projectDayMap = new Map<string, { messages: number; sessions: Set<string> }>()
+    for (const row of sessionProjects) {
+      const key = `${row.project}|${row.day}`
+      if (!projectDayMap.has(key)) {
+        projectDayMap.set(key, { messages: 0, sessions: new Set() })
+      }
+      projectDayMap.get(key)!.sessions.add(row.project)
+    }
+    for (const row of messageProjects) {
+      const key = `${row.project}|${row.day}`
+      if (!projectDayMap.has(key)) {
+        projectDayMap.set(key, { messages: 0, sessions: new Set() })
+      }
+      projectDayMap.get(key)!.messages++
+    }
+
+    const projectActivityHeatmap: ProjectHeatmapPoint[] = Array.from(projectDayMap.entries()).map(([key, val]) => {
+      const [project, date] = key.split('|')
+      return {
+        project,
+        date,
+        messageCount: val.messages,
+        sessionCount: val.sessions.size,
+      }
+    })
+
+    // Source breakdown - get session counts and message counts separately
+    const sourceSessionRows = await db
+      .select({
+        sourceType: sessions.sourceType,
+        sessionCount: count(sessions.id),
+      })
+      .from(sessions)
+      .where(eq(sessions.userId, userId))
+      .groupBy(sessions.sourceType)
+
+    const sourceMessageRows = await db
+      .select({
+        sourceType: sessions.sourceType,
+        msgCount: count(messages.id),
+      })
+      .from(messages)
+      .innerJoin(sessions, eq(messages.sessionId, sessions.id))
+      .where(eq(sessions.userId, userId))
+      .groupBy(sessions.sourceType)
+
+    const sourceMsgMap = new Map(sourceMessageRows.map(r => [r.sourceType, Number(r.msgCount)]))
+    const totalMsgs = Array.from(sourceMsgMap.values()).reduce((sum, v) => sum + v, 0)
+
+    const sourceBreakdown: SourceBreakdown[] = sourceSessionRows.map(r => ({
+      sourceType: r.sourceType,
+      sessionCount: Number(r.sessionCount),
+      messageCount: sourceMsgMap.get(r.sourceType) || 0,
+      percentage: totalMsgs > 0 ? ((sourceMsgMap.get(r.sourceType) || 0) / totalMsgs) * 100 : 0,
+    }))
+
+    // Token estimation (heuristic: ~4 chars/token for text, ~2 chars/token for code)
+    const allMsgs = await db
+      .select({ content: messages.content, type: messages.type })
+      .from(messages)
+      .where(and(
+        eq(messages.userId, userId),
+        gte(messages.timestamp, startDate),
+      ))
+
+    let totalInputChars = 0
+    let totalOutputChars = 0
+    for (const m of allMsgs) {
+      const contentStr = typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+      if (m.type === 'user') {
+        totalInputChars += contentStr.length
+      } else if (m.type === 'assistant') {
+        totalOutputChars += contentStr.length
+      }
+    }
+
+    // Rough heuristic
+    const estimatedInputTokens = Math.floor(totalInputChars / 4)
+    const estimatedOutputTokens = Math.floor(totalOutputChars / 4)
+    const estimatedTotalTokens = estimatedInputTokens + estimatedOutputTokens
+
+    const bySourceInput = new Map<string, number>()
+    const bySourceOutput = new Map<string, number>()
+    const msgSourceRows = await db
+      .select({
+        sourceType: sessions.sourceType,
+        content: messages.content,
+        type: messages.type,
+      })
+      .from(messages)
+      .innerJoin(sessions, eq(messages.sessionId, sessions.id))
+      .where(and(
+        eq(sessions.userId, userId),
+        gte(sessions.startedAt, startDate),
+      ))
+
+    for (const r of msgSourceRows) {
+      const contentStr = typeof r.content === 'string' ? r.content : JSON.stringify(r.content)
+      if (r.type === 'user') {
+        bySourceInput.set(r.sourceType, (bySourceInput.get(r.sourceType) || 0) + contentStr.length)
+      } else if (r.type === 'assistant') {
+        bySourceOutput.set(r.sourceType, (bySourceOutput.get(r.sourceType) || 0) + contentStr.length)
+      }
+    }
+
+    const bySource: { sourceType: string; inputTokens: number; outputTokens: number }[] = []
+    for (const st of new Set([...bySourceInput.keys(), ...bySourceOutput.keys()])) {
+      bySource.push({
+        sourceType: st,
+        inputTokens: Math.floor((bySourceInput.get(st) || 0) / 4),
+        outputTokens: Math.floor((bySourceOutput.get(st) || 0) / 4),
+      })
+    }
+
+    const estimatedTokenUsage: TokenUsageEstimate = {
+      estimatedInputTokens,
+      estimatedOutputTokens,
+      estimatedTotalTokens,
+      bySource,
+      disclaimer: 'Token 数量为基于字符数的估算值，仅供参考。实际 Token 数量取决于分词方式和模型。',
+    }
+
+    return {
+      dailyActivity,
+      weeklyActivity,
+      toolUsageStats,
+      toolUsageTrend,
+      sessionDurationStats,
+      sessionsByHourOfDay,
+      sessionsByDayOfWeek,
+      projectActivityHeatmap,
+      sourceBreakdown,
+      estimatedTokenUsage,
+    }
   }
 }

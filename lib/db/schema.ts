@@ -38,6 +38,7 @@ export const rawFiles = pgTable('raw_files', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   machineId: varchar('machine_id', { length: 64 }).notNull(),
   machineName: varchar('machine_name', { length: 255 }).notNull().default(''),
+  sourceType: varchar('source_type', { length: 50 }).notNull().default('claude-code'),
   filePath: text('file_path').notNull(),
   contentHash: varchar('content_hash', { length: 64 }).notNull(),
   content: text('content').notNull(),
@@ -58,6 +59,7 @@ export const sessions = pgTable('sessions', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   machineId: varchar('machine_id', { length: 64 }),
   machineName: varchar('machine_name', { length: 255 }),
+  sourceType: varchar('source_type', { length: 50 }).notNull().default('claude-code'),
   sessionId: varchar('session_id', { length: 255 }).notNull(),
   display: text('display').notNull(),
   project: text('project').notNull(),
@@ -66,6 +68,8 @@ export const sessions = pgTable('sessions', {
   sourceFilePaths: text('source_file_paths'),
   startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
   lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
+  durationSeconds: integer('duration_seconds'),
+  firstMessageAt: timestamp('first_message_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -74,6 +78,8 @@ export const sessions = pgTable('sessions', {
   index('idx_sessions_started_at').on(table.startedAt),
   index('idx_sessions_project').on(table.project),
   index('idx_sessions_machine_id').on(table.machineId),
+  index('idx_sessions_source_type').on(table.sourceType),
+  index('idx_sessions_duration').on(table.durationSeconds),
 ])
 
 export const messages = pgTable('messages', {

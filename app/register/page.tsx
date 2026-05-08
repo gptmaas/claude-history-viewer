@@ -112,7 +112,7 @@ export default function RegisterPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center space-y-3 pb-2">
           <div className="flex justify-center mb-2">
-            <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center">
+            <div className="w-12 h-12 rounded-xl bg-blue-600 flex items-center justify-center">
               <BarChart3 className="w-7 h-7 text-white" />
             </div>
           </div>
@@ -189,7 +189,7 @@ export default function RegisterPage() {
         <CardFooter className="justify-center">
           <p className="text-sm text-slate-500">
             Already have an account?{' '}
-            <Link href="/login" className="text-indigo-600 hover:text-indigo-500 font-medium">
+            <Link href="/login" className="text-blue-600 hover:text-blue-500 font-medium">
               Sign in
             </Link>
           </p>
