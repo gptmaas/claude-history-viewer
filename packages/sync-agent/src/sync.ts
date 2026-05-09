@@ -3,7 +3,8 @@ import { join } from 'path'
 import { homedir } from 'os'
 import { createHash } from 'crypto'
 import type { SyncConfig } from './config'
-import { scanAllJsonlFiles } from './scanner'
+import { scanAllJsonlFiles, scanSources } from './scanner'
+import { createSources } from './sources'
 
 interface SyncResult {
   syncedFiles: number
@@ -40,7 +41,8 @@ function computeHash(content: string): string {
 
 async function pushBatch(
   config: SyncConfig,
-  files: Array<{ filePath: string; content: string; contentHash: string; mtime: string; size: number }>
+  files: Array<{ filePath: string; content: string; contentHash: string; mtime: string; size: number }>,
+  sourceType: string,
 ): Promise<{ acceptedFiles: number; skippedFiles: number; error?: string }> {
   try {
     const response = await fetch(`${config.serverUrl}/api/sync/push`, {
@@ -52,6 +54,7 @@ async function pushBatch(
       body: JSON.stringify({
         machineId: config.machineId,
         machineName: config.machineName,
+        sourceType,
         files,
       }),
     })
@@ -76,83 +79,99 @@ async function pushBatch(
 }
 
 export async function fullSync(config: SyncConfig): Promise<SyncResult> {
-  const allFiles = scanAllJsonlFiles(config.claudeDir)
+  const sourceNames = config.sources ?? ['claude-code']
   const localCache = loadFileCache()
 
-  // Determine which files need uploading (new or changed)
-  const toUpload: Array<{ filePath: string; content: string; contentHash: string; mtime: string; size: number }> = []
+  // Multi-source mode
+  const sources = createSources(sourceNames, config.sourceDirs)
+  const scanResults = scanSources(sources)
 
-  for (const file of allFiles) {
-    const content = readFileSync(file.absolutePath, 'utf-8')
-    const hash = computeHash(content)
-
-    if (localCache[file.relativePath] === hash) {
-      continue // unchanged
-    }
-
-    toUpload.push({
-      filePath: file.relativePath,
-      content,
-      contentHash: hash,
-      mtime: new Date(file.mtime).toISOString(),
-      size: file.size,
-    })
-  }
-
-  if (toUpload.length === 0) {
-    return { syncedFiles: 0, skippedFiles: allFiles.length, totalFiles: allFiles.length }
-  }
-
-  // Batch by total payload size
   let totalAccepted = 0
   let totalSkipped = 0
+  let totalFiles = 0
   let lastError: string | undefined
 
-  let batch: typeof toUpload = []
-  let batchSize = 0
+  for (const { sourceType, files: allFiles } of scanResults) {
+    totalFiles += allFiles.length
 
-  for (const file of toUpload) {
-    const entrySize = Buffer.byteLength(JSON.stringify(file), 'utf-8')
-    if (batchSize + entrySize > MAX_BATCH_SIZE && batch.length > 0) {
-      const result = await pushBatch(config, batch)
+    const toUpload: Array<{ filePath: string; content: string; contentHash: string; mtime: string; size: number }> = []
+
+    for (const file of allFiles) {
+      const content = readFileSync(file.absolutePath, 'utf-8')
+      const hash = computeHash(content)
+
+      if (localCache[`${sourceType}:${file.relativePath}`] === hash) {
+        continue // unchanged
+      }
+
+      toUpload.push({
+        filePath: file.relativePath,
+        content,
+        contentHash: hash,
+        mtime: new Date(file.mtime).toISOString(),
+        size: file.size,
+      })
+    }
+
+    if (toUpload.length === 0) continue
+
+    // Batch by total payload size
+    let batch: typeof toUpload = []
+    let batchSize = 0
+
+    for (const file of toUpload) {
+      const entrySize = Buffer.byteLength(JSON.stringify(file), 'utf-8')
+      if (batchSize + entrySize > MAX_BATCH_SIZE && batch.length > 0) {
+        const result = await pushBatch(config, batch, sourceType)
+        if (result.error) {
+          lastError = result.error
+        } else {
+          totalAccepted += result.acceptedFiles
+          totalSkipped += result.skippedFiles
+          for (const f of batch) {
+            localCache[`${sourceType}:${f.filePath}`] = f.contentHash
+          }
+        }
+        batch = []
+        batchSize = 0
+      }
+      batch.push(file)
+      batchSize += entrySize
+    }
+
+    // Push remaining batch
+    if (batch.length > 0) {
+      const result = await pushBatch(config, batch, sourceType)
       if (result.error) {
         lastError = result.error
       } else {
         totalAccepted += result.acceptedFiles
         totalSkipped += result.skippedFiles
-        // Update local cache for accepted files
         for (const f of batch) {
-          localCache[f.filePath] = f.contentHash
+          localCache[`${sourceType}:${f.filePath}`] = f.contentHash
         }
       }
-      batch = []
-      batchSize = 0
     }
-    batch.push(file)
-    batchSize += entrySize
   }
 
-  // Push remaining batch
-  if (batch.length > 0) {
-    const result = await pushBatch(config, batch)
-    if (result.error) {
-      lastError = result.error
-    } else {
-      totalAccepted += result.acceptedFiles
-      totalSkipped += result.skippedFiles
-      for (const f of batch) {
-        localCache[f.filePath] = f.contentHash
+  // Count skipped (unchanged) files
+  let unchanged = 0
+  for (const { sourceType, files } of scanResults) {
+    for (const file of files) {
+      const content = readFileSync(file.absolutePath, 'utf-8')
+      const hash = computeHash(content)
+      if (localCache[`${sourceType}:${file.relativePath}`] === hash) {
+        unchanged++
       }
     }
   }
 
-  // Update local cache
   saveFileCache(localCache)
 
   return {
     syncedFiles: totalAccepted,
-    skippedFiles: totalSkipped,
-    totalFiles: allFiles.length,
+    skippedFiles: totalSkipped + unchanged,
+    totalFiles,
     error: lastError,
   }
 }

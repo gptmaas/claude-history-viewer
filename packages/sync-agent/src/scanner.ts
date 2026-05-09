@@ -1,50 +1,19 @@
-import { readdirSync, statSync, existsSync } from 'fs'
-import { join, extname, relative } from 'path'
+import type { DiscoveredFile } from './sources/types'
+import { ClaudeCodeSource } from './sources/claude-code'
+import type { ConversationSource } from './sources/types'
 
-export interface DiscoveredFile {
-  relativePath: string
-  absolutePath: string
-  mtime: number
-  size: number
-}
+export type { DiscoveredFile }
+export type { ConversationSource }
 
 export function scanAllJsonlFiles(claudeDir: string): DiscoveredFile[] {
-  const files: DiscoveredFile[] = []
-
-  // Include history.jsonl
-  const historyPath = join(claudeDir, 'history.jsonl')
-  if (existsSync(historyPath)) {
-    const stat = statSync(historyPath)
-    files.push({
-      relativePath: 'history.jsonl',
-      absolutePath: historyPath,
-      mtime: stat.mtimeMs,
-      size: stat.size,
-    })
-  }
-
-  // Recursively scan projects/ directory
-  const projectsDir = join(claudeDir, 'projects')
-  if (existsSync(projectsDir)) {
-    collectJsonl(projectsDir, claudeDir, files)
-  }
-
-  return files
+  // Backwards-compatible: single claudeDir creates a ClaudeCodeSource
+  const source = new ClaudeCodeSource(claudeDir)
+  return source.discoverFiles()
 }
 
-function collectJsonl(dir: string, claudeDir: string, result: DiscoveredFile[]): void {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      collectJsonl(fullPath, claudeDir, result)
-    } else if (extname(entry.name) === '.jsonl') {
-      const stat = statSync(fullPath)
-      result.push({
-        relativePath: relative(claudeDir, fullPath),
-        absolutePath: fullPath,
-        mtime: stat.mtimeMs,
-        size: stat.size,
-      })
-    }
-  }
+export function scanSources(sources: ConversationSource[]): Array<{ sourceType: string; files: DiscoveredFile[] }> {
+  return sources.map(source => ({
+    sourceType: source.name,
+    files: source.discoverFiles(),
+  }))
 }

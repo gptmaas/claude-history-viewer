@@ -20,6 +20,15 @@ interface Session {
   messageCount?: number
   machineId?: string | null
   machineName?: string | null
+  sourceType?: string | null
+}
+
+interface SourceInfo {
+  name: string
+  label: string
+  lastSyncAt: string | null
+  sessionCount: number
+  fileCount: number
 }
 
 function SessionsPage() {
@@ -33,6 +42,8 @@ function SessionsPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [machines, setMachines] = useState<Machine[]>([])
   const [selectedMachine, setSelectedMachine] = useState<string>('all')
+  const [sources, setSources] = useState<SourceInfo[]>([])
+  const [selectedSource, setSelectedSource] = useState<string>('all')
 
   useEffect(() => { loadSessions() }, [])
 
@@ -42,6 +53,10 @@ function SessionsPage() {
         .then((r) => r.json())
         .then((data) => setMachines(data.machines ?? []))
         .catch(console.error)
+      fetch('/api/sources')
+        .then((r) => r.json())
+        .then((data) => setSources(data.sources ?? []))
+        .catch(console.error)
     }
   }, [])
 
@@ -50,7 +65,7 @@ function SessionsPage() {
     if (projectParam && projects.length > 0) setSelectedProject(projectParam)
   }, [searchParams, projects])
 
-  useEffect(() => { filterSessions() }, [sessions, searchQuery, selectedProject, selectedMachine]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { filterSessions() }, [sessions, searchQuery, selectedProject, selectedMachine, selectedSource]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadSessions() {
     try {
@@ -70,6 +85,7 @@ function SessionsPage() {
     let filtered = [...sessions]
     if (selectedProject !== 'all') filtered = filtered.filter((s) => s.project === selectedProject)
     if (selectedMachine !== 'all') filtered = filtered.filter((s) => s.machineId === selectedMachine)
+    if (selectedSource !== 'all') filtered = filtered.filter((s) => s.sourceType === selectedSource)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       filtered = filtered.filter((s) => s.display.toLowerCase().includes(q) || s.projectName.toLowerCase().includes(q))
@@ -104,6 +120,14 @@ function SessionsPage() {
               <select className="h-9 flex-1 rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground focus:border-primary/50 focus:outline-none" value={selectedMachine} onChange={(e) => setSelectedMachine(e.target.value)}>
                 <option value="all">All Machines</option>
                 {machines.map((m) => (<option key={m.machineId} value={m.machineId}>{m.machineName} ({m.sessionCount})</option>))}
+              </select>
+            </div>
+          )}
+          {sources.length > 1 && (
+            <div className="flex items-center gap-2 w-48">
+              <select className="h-9 flex-1 rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground focus:border-primary/50 focus:outline-none" value={selectedSource} onChange={(e) => setSelectedSource(e.target.value)}>
+                <option value="all">All Sources</option>
+                {sources.map((s) => (<option key={s.name} value={s.name}>{s.label} ({s.sessionCount})</option>))}
               </select>
             </div>
           )}

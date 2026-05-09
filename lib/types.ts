@@ -95,6 +95,7 @@ export interface SearchResult {
     message: Message
     snippet: string
     highlightRanges: Array<{ start: number; end: number }>
+    headline?: string
   }>
   relevanceScore: number
 }
@@ -127,10 +128,38 @@ export interface SessionDetailResponse {
   messages: Message[]
 }
 
+export interface SearchFilters {
+  query: string
+  project?: string
+  machineId?: string
+  sourceType?: string
+  messageType?: string
+  toolName?: string
+  dateRange?: {
+    start: string
+    end: string
+  }
+}
+
+export interface SearchFacets {
+  projects: { name: string; count: number }[]
+  messageTypes: { type: string; count: number }[]
+  toolNames: { name: string; count: number }[]
+  sources: { sourceType: string; count: number }[]
+  dateRange: { earliest: string; latest: string }
+}
+
 export interface SearchResponse {
   results: SearchResult[]
   total: number
   query: string
+  facets?: SearchFacets
+}
+
+export interface SearchSuggestion {
+  type: 'session' | 'tool'
+  label: string
+  description?: string
 }
 
 // Dashboard stats types

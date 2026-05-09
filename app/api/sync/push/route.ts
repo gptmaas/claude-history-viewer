@@ -16,6 +16,7 @@ interface RawFilePayload {
 interface SyncPayload {
   machineId: string
   machineName?: string
+  sourceType?: string
   files: RawFilePayload[]
 }
 
@@ -34,7 +35,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const body: SyncPayload = await request.json()
-    const { machineId, machineName, files } = body
+    const { machineId, machineName, sourceType, files } = body
+    const effectiveSourceType = sourceType || 'claude-code'
 
     if (!machineId || !Array.isArray(files)) {
       return NextResponse.json({ error: 'Invalid payload: machineId and files required' }, { status: 400 })
@@ -69,6 +71,7 @@ export async function POST(request: NextRequest) {
             fileSize: file.size,
             lineCount,
             mtime: file.mtime ? new Date(file.mtime) : null,
+            sourceType: effectiveSourceType,
             parsedAt: null,
             parseVersion: 0,
             updatedAt: new Date(),
@@ -79,6 +82,7 @@ export async function POST(request: NextRequest) {
           userId,
           machineId,
           machineName: machineName || '',
+          sourceType: effectiveSourceType,
           filePath: file.filePath,
           content: file.content,
           contentHash: file.contentHash,
@@ -91,7 +95,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Trigger parsing for newly stored files
-    const parseResult = await parseAllPendingRawFiles(userId, machineId, machineName)
+    const parseResult = await parseAllPendingRawFiles(userId, machineId, machineName, effectiveSourceType)
 
     return NextResponse.json({
       success: true,

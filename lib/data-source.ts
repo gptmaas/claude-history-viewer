@@ -2,6 +2,7 @@ import type {
   SessionsResponse,
   SessionDetail,
   SearchResponse,
+  SearchFilters,
   DashboardStats,
   ProjectStats,
   Machine,
@@ -10,7 +11,7 @@ import type {
 export interface DataSource {
   loadSessionsList(userId: string, page: number, pageSize: number, project?: string, machineId?: string, sourceType?: string): Promise<SessionsResponse>
   loadSessionDetail(userId: string, sessionId: string): Promise<SessionDetail | null>
-  searchSessions(userId: string, keyword: string, filters?: { project?: string; machineId?: string }): Promise<SearchResponse>
+  searchSessions(userId: string, filters: SearchFilters): Promise<SearchResponse>
   getDashboardStats(userId: string): Promise<DashboardStats>
   getProjects(userId: string, machineId?: string, sourceType?: string): Promise<ProjectStats[]>
   getMachines(userId: string): Promise<Machine[]>

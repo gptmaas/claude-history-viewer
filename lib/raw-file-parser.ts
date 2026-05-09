@@ -327,6 +327,7 @@ async function parseFilesWithParser(
         uuid: m.uuid,
         timestamp: m.timestamp ? new Date(m.timestamp) : null,
         searchVector: searchText,
+        searchTsvector: sql`to_tsvector('simple', ${searchText})`,
       })
       totalMessages++
     }

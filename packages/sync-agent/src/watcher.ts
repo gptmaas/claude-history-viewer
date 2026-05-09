@@ -1,38 +1,43 @@
 import { watch } from 'chokidar'
 import type { SyncConfig } from './config'
 import { fullSync } from './sync'
+import { createSources } from './sources'
 
 let syncTimer: ReturnType<typeof setTimeout> | null = null
 let isSyncing = false
 
 export function startWatcher(config: SyncConfig): void {
-  const watcher = watch(config.claudeDir, {
-    persistent: true,
-    ignoreInitial: true,
-    depth: 10,
-    awaitWriteFinish: {
-      stabilityThreshold: 1000,
-      pollInterval: 500,
-    },
-  })
+  const sourceNames = config.sources ?? ['claude-code']
+  const sources = createSources(sourceNames, config.sourceDirs)
 
-  watcher.on('all', (event, path) => {
-    if (!path.endsWith('.jsonl')) return
+  for (const source of sources) {
+    const watcher = watch(source.watchDir, {
+      persistent: true,
+      ignoreInitial: true,
+      depth: 10,
+      awaitWriteFinish: {
+        stabilityThreshold: 1000,
+        pollInterval: 500,
+      },
+    })
 
-    // Debounce: wait 2 seconds after last change before syncing
-    if (syncTimer) clearTimeout(syncTimer)
-    syncTimer = setTimeout(() => {
-      if (!isSyncing) {
-        triggerSync(config)
-      }
-    }, 2000)
-  })
+    watcher.on('all', (event, path) => {
+      if (!path.endsWith('.jsonl')) return
 
-  watcher.on('error', (error) => {
-    console.error('Watcher error:', error)
-  })
+      if (syncTimer) clearTimeout(syncTimer)
+      syncTimer = setTimeout(() => {
+        if (!isSyncing) {
+          triggerSync(config)
+        }
+      }, 2000)
+    })
 
-  console.log(`Watching ${config.claudeDir} for changes...`)
+    watcher.on('error', (error) => {
+      console.error(`Watcher error (${source.name}):`, error)
+    })
+
+    console.log(`Watching ${source.watchDir} (${source.label}) for changes...`)
+  }
 }
 
 async function triggerSync(config: SyncConfig): Promise<void> {

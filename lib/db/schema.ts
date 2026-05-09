@@ -8,8 +8,13 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  customType,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+
+const tsvector = customType<{ data: string }>({
+  dataType() { return 'tsvector' }
+})
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -93,6 +98,7 @@ export const messages = pgTable('messages', {
   timestamp: timestamp('timestamp', { withTimezone: true }),
   metadata: jsonb('metadata'),
   searchVector: text('search_vector'),
+  searchTsvector: tsvector('search_tsvector'),
 }, (table) => [
   index('idx_messages_session_id').on(table.sessionId),
   index('idx_messages_user_id').on(table.userId),

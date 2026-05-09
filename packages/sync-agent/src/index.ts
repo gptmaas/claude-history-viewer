@@ -5,6 +5,7 @@ import { loadConfig, saveConfig, getDefaultClaudeDir, getOrCreateMachineId, getO
 import { fullSync, getSyncStatus } from './sync'
 import { startWatcher } from './watcher'
 import { createInterface } from 'readline'
+import { getAvailableSourceNames, getSourceLabel, getDefaultDir } from './sources'
 
 const program = new Command()
 
@@ -25,7 +26,26 @@ program
 
     const serverUrl = await question(pc.dim('Server URL: '))
     const apiKey = await question(pc.dim('API Key: '))
-    const claudeDir = await question(pc.dim(`Claude directory [${getDefaultClaudeDir()}]: `))
+
+    // Source selection
+    const availableSources = getAvailableSourceNames()
+    console.log(pc.dim('\nAvailable sources:'))
+    for (const name of availableSources) {
+      console.log(pc.dim(`  - ${name} (${getSourceLabel(name)})`))
+    }
+    const sourcesInput = await question(pc.dim(`Enable sources (comma-separated) [claude-code]: `))
+    const sources = sourcesInput
+      ? sourcesInput.split(',').map(s => s.trim()).filter(Boolean)
+      : ['claude-code']
+
+    // Per-source directory config
+    const sourceDirs: Record<string, string> = {}
+    for (const source of sources) {
+      const defaultDir = getDefaultDir(source)
+      const dir = await question(pc.dim(`${getSourceLabel(source)} directory [${defaultDir}]: `))
+      if (dir) sourceDirs[source] = dir
+    }
+
     const interval = await question(pc.dim('Sync interval in seconds [60]: '))
 
     rl.close()
@@ -36,14 +56,17 @@ program
     saveConfig({
       serverUrl: serverUrl.replace(/\/$/, ''),
       apiKey,
-      claudeDir: claudeDir || getDefaultClaudeDir(),
+      claudeDir: sourceDirs['claude-code'] ?? getDefaultDir('claude-code'),
       syncInterval: parseInt(interval) || 60,
       machineId,
       machineName,
+      sources,
+      sourceDirs: Object.keys(sourceDirs).length > 0 ? sourceDirs : undefined,
     })
 
     console.log(pc.green('\nConfiguration saved!'))
     console.log(pc.dim(`Machine: ${machineName} (${machineId})`))
+    console.log(pc.dim(`Sources: ${sources.map(s => getSourceLabel(s)).join(', ')}`))
     console.log(pc.dim('Run `codememory-sync start` to begin syncing.\n'))
   })
 
@@ -57,9 +80,11 @@ program
       process.exit(1)
     }
 
+    const sourceNames = config.sources ?? ['claude-code']
+
     console.log(pc.cyan('\nCodeMemory Sync Daemon\n'))
     console.log(pc.dim(`Server: ${config.serverUrl}`))
-    console.log(pc.dim(`Claude dir: ${config.claudeDir}`))
+    console.log(pc.dim(`Sources: ${sourceNames.map(s => getSourceLabel(s)).join(', ')}`))
     console.log(pc.dim(`Machine: ${config.machineName} (${config.machineId})`))
 
     // Initial sync
@@ -128,6 +153,7 @@ program
     console.log(pc.cyan('\nSync Status\n'))
     console.log(`  Last sync:  ${status.lastSyncAt ? new Date(status.lastSyncAt).toLocaleString() : pc.dim('Never')}`)
     console.log(`  Machine:    ${config.machineName} (${config.machineId})`)
+    console.log(`  Sources:    ${(config.sources ?? ['claude-code']).map(s => getSourceLabel(s)).join(', ')}`)
     console.log(`  Raw files:  ${status.totalRawFiles}`)
     console.log(`  Sessions:   ${status.totalSessions}`)
     console.log(`  Messages:   ${status.totalMessages}`)

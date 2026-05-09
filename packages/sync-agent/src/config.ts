@@ -15,6 +15,8 @@ export interface SyncConfig {
   syncInterval: number // seconds
   machineId: string
   machineName: string
+  sources?: string[] // enabled source names, default ['claude-code']
+  sourceDirs?: Record<string, string> // optional per-source directory overrides
 }
 
 export function loadConfig(): SyncConfig | null {

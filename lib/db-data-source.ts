@@ -3,10 +3,12 @@ import type {
   SessionsResponse,
   SessionDetail,
   SearchResponse,
+  SearchFilters,
+  SearchFacets,
+  SearchResult,
   DashboardStats,
   ProjectStats,
   Message,
-  SearchResult,
   Machine,
   AnalyticsStats,
   DailyActivityPoint,
@@ -122,132 +124,229 @@ export class DbDataSource implements DataSource {
     }
   }
 
-  async searchSessions(userId: string, keyword: string, filters?: { project?: string; machineId?: string }): Promise<SearchResponse> {
+  async searchSessions(userId: string, filters: SearchFilters): Promise<SearchResponse> {
     const db = getDb()
+    const { query, project, machineId, sourceType, messageType, toolName, dateRange } = filters
 
-    // Build session-level filter conditions
-    const sessionConditions = [eq(sessions.userId, userId)]
-    if (filters?.machineId) {
-      sessionConditions.push(eq(sessions.machineId, filters.machineId))
-    }
-    if (filters?.project) {
-      sessionConditions.push(ilike(sessions.projectName, `%${filters.project}%`))
+    if (!query.trim()) {
+      return { results: [], total: 0, query }
     }
 
-    // Search in messages using ILIKE for text search
-    const matchingMessages = await db.query.messages.findMany({
-      where: and(
-        eq(messages.userId, userId),
-        ilike(messages.searchVector, `%${keyword}%`),
-      ),
-      limit: 1000,
-    })
+    // Build filter SQL conditions for session-level filters
+    const filterSQLs: ReturnType<typeof sql>[] = []
+    if (project) {
+      filterSQLs.push(sql`s.project_name ILIKE ${'%' + project + '%'}`)
+    }
+    if (machineId) {
+      filterSQLs.push(sql`s.machine_id = ${machineId}`)
+    }
+    if (sourceType) {
+      filterSQLs.push(sql`s.source_type = ${sourceType}`)
+    }
+    if (messageType) {
+      filterSQLs.push(sql`m.type = ${messageType}`)
+    }
+    if (toolName) {
+      filterSQLs.push(sql`m.content->0->>'name' = ${toolName}`)
+    }
+    if (dateRange?.start) {
+      filterSQLs.push(sql`m.timestamp >= ${dateRange.start}::timestamptz`)
+    }
+    if (dateRange?.end) {
+      filterSQLs.push(sql`m.timestamp <= ${dateRange.end}::timestamptz`)
+    }
+    const filterSQL = filterSQLs.length > 0
+      ? sql` AND ${sql.join(filterSQLs, sql` AND `)}`
+      : sql``
 
-    // Get unique session IDs, then filter by machine/project
-    const sessionIds = new Set(matchingMessages.map((m) => m.sessionId))
+    const tsquery = sql`plainto_tsquery('simple', ${query})`
 
+    // Phase 1: tsvector message search
+    const msgRows = await db.execute<{
+      id: string; session_id: string; type: string; role: string | null;
+      content: unknown; uuid: string | null; timestamp: string | null;
+      sess_sid: string; display: string; project: string; project_name: string;
+      source_type: string; started_at: string; message_count: number | null;
+      machine_id: string | null; machine_name: string | null;
+      rank: number; headline: string;
+    }>(sql`
+      SELECT
+        m.id, m.session_id, m.type, m.role, m.content, m.uuid, m.timestamp,
+        s.session_id AS sess_sid, s.display, s.project, s.project_name,
+        s.source_type, s.started_at, s.message_count, s.machine_id, s.machine_name,
+        ts_rank(m.search_tsvector, ${tsquery}) AS rank,
+        ts_headline('simple', m.content::text, ${tsquery},
+          'StartSel=<mark>, StopSel=</mark>, MaxWords=50, MinWords=20'
+        ) AS headline
+      FROM messages m
+      JOIN sessions s ON m.session_id = s.id
+      WHERE m.user_id = ${userId}
+        AND m.search_tsvector @@ ${tsquery}
+        ${filterSQL}
+      ORDER BY rank DESC
+      LIMIT 100
+    `)
+
+    // Build results from tsvector matches
+    const seenSessions = new Set<string>()
     const results: SearchResult[] = []
 
-    const sessionFilterWhere = sessionConditions.length === 1 ? sessionConditions[0] : and(...sessionConditions)
+    for (const row of msgRows) {
+      const sid = row.sess_sid
 
-    for (const sid of sessionIds) {
-      const session = await db.query.sessions.findFirst({
-        where: and(eq(sessions.id, sid), sessionFilterWhere),
+      if (!seenSessions.has(sid)) {
+        seenSessions.add(sid)
+        results.push({
+          session: {
+            sessionId: row.sess_sid,
+            display: row.display,
+            project: row.project,
+            projectName: row.project_name,
+            timestamp: new Date(row.started_at).getTime(),
+            date: new Date(row.started_at).toISOString() as unknown as Date,
+            messageCount: row.message_count ?? undefined,
+            machineId: row.machine_id,
+            machineName: row.machine_name,
+            sourceType: row.source_type,
+          },
+          matchedMessages: [],
+          relevanceScore: 0,
+        })
+      }
+
+      const result = results.find((r) => r.session.sessionId === sid)!
+      result.relevanceScore = Math.max(result.relevanceScore, row.rank)
+      result.matchedMessages.push({
+        message: {
+          type: row.type,
+          role: row.role,
+          content: row.content,
+          uuid: row.uuid ?? undefined,
+          sessionId: row.sess_sid,
+          timestamp: row.timestamp ? new Date(row.timestamp).toISOString() : undefined,
+        } as Message,
+        snippet: row.headline || '',
+        highlightRanges: [],
+        headline: row.headline || undefined,
+      })
+    }
+
+    // Phase 2: Search session titles (ILIKE) — only if no content-specific filters
+    if (!messageType && !toolName) {
+      const titleConditions = [eq(sessions.userId, userId), ilike(sessions.display, `%${query}%`)]
+      if (project) titleConditions.push(ilike(sessions.projectName, `%${project}%`))
+      if (machineId) titleConditions.push(eq(sessions.machineId, machineId))
+      if (sourceType) titleConditions.push(eq(sessions.sourceType, sourceType))
+      if (dateRange?.start) titleConditions.push(gte(sessions.startedAt, new Date(dateRange.start)))
+      if (dateRange?.end) titleConditions.push(sql`${sessions.startedAt} <= ${new Date(dateRange.end)}`)
+
+      const titleMatches = await db.query.sessions.findMany({
+        where: titleConditions.length === 1 ? titleConditions[0] : and(...titleConditions),
       })
 
-      if (!session) continue
+      for (const session of titleMatches) {
+        if (seenSessions.has(session.sessionId)) continue
+        seenSessions.add(session.sessionId)
 
-      const sessionMessages = matchingMessages.filter((m) => m.sessionId === sid)
-      const matchedMessages = sessionMessages.map((m) => {
-        const contentStr = typeof m.content === 'string'
-          ? m.content
-          : JSON.stringify(m.content)
-        const lowerContent = contentStr.toLowerCase()
-        const lowerKeyword = keyword.toLowerCase()
-        const idx = lowerContent.indexOf(lowerKeyword)
-
-        let snippet = ''
-        if (idx >= 0) {
-          const start = Math.max(0, idx - 50)
-          const end = Math.min(contentStr.length, idx + keyword.length + 50)
-          snippet = (start > 0 ? '...' : '') + contentStr.slice(start, end) + (end < contentStr.length ? '...' : '')
-        }
-
-        return {
-          message: {
-            type: m.type,
-            role: m.role,
-            content: m.content,
-            uuid: m.uuid ?? undefined,
+        results.push({
+          session: {
             sessionId: session.sessionId,
-            timestamp: m.timestamp?.toISOString(),
-          } as Message,
-          snippet,
-          highlightRanges: idx >= 0 ? [{ start: Math.max(0, idx - 50), end: Math.max(0, idx - 50) + keyword.length }] : [],
-        }
-      })
-
-      // Also check if title matches
-      const titleMatch = session.display.toLowerCase().includes(keyword.toLowerCase())
-
-      results.push({
-        session: {
-          sessionId: session.sessionId,
-          display: session.display,
-          project: session.project,
-          projectName: session.projectName,
-          timestamp: session.startedAt.getTime(),
-          date: session.startedAt.toISOString() as unknown as Date,
-          messageCount: session.messageCount ?? undefined,
-          machineId: session.machineId,
-          machineName: session.machineName,
-        },
-        matchedMessages,
-        relevanceScore: matchedMessages.length + (titleMatch ? 1 : 0),
-      })
-    }
-
-    // Also search session titles
-    const titleWhereConditions = [
-      eq(sessions.userId, userId),
-      ilike(sessions.display, `%${keyword}%`),
-    ]
-    if (filters?.machineId) {
-      titleWhereConditions.push(eq(sessions.machineId, filters.machineId))
-    }
-    if (filters?.project) {
-      titleWhereConditions.push(ilike(sessions.projectName, `%${filters.project}%`))
-    }
-    const titleMatches = await db.query.sessions.findMany({
-      where: and(...titleWhereConditions),
-    })
-
-    for (const session of titleMatches) {
-      if (results.some((r) => r.session.sessionId === session.sessionId)) continue
-
-      results.push({
-        session: {
-          sessionId: session.sessionId,
-          display: session.display,
-          project: session.project,
-          projectName: session.projectName,
-          timestamp: session.startedAt.getTime(),
-          date: session.startedAt.toISOString() as unknown as Date,
-          messageCount: session.messageCount ?? undefined,
-          machineId: session.machineId,
-          machineName: session.machineName,
-        },
-        matchedMessages: [],
-        relevanceScore: 1,
-      })
+            display: session.display,
+            project: session.project,
+            projectName: session.projectName,
+            timestamp: session.startedAt.getTime(),
+            date: session.startedAt.toISOString() as unknown as Date,
+            messageCount: session.messageCount ?? undefined,
+            machineId: session.machineId,
+            machineName: session.machineName,
+            sourceType: session.sourceType,
+          },
+          matchedMessages: [],
+          relevanceScore: 0.1,
+        })
+      }
     }
 
     results.sort((a, b) => b.relevanceScore - a.relevanceScore)
 
+    // Phase 3: Facet queries (run in parallel)
+    let facets: SearchFacets | undefined
+    if (msgRows.length > 0) {
+      try {
+        const facetFilterSQL = filterSQLs.length > 0
+          ? sql` AND ${sql.join(filterSQLs, sql` AND `)}`
+          : sql``
+
+        const [projectRows, typeRows, toolRows, sourceRows] = await Promise.all([
+          db.execute<{ name: string; count: number }>(sql`
+            SELECT s.project AS name, COUNT(*)::int AS count
+            FROM messages m JOIN sessions s ON m.session_id = s.id,
+                 ${tsquery} query
+            WHERE m.user_id = ${userId}
+              AND m.search_tsvector @@ query
+              ${facetFilterSQL}
+            GROUP BY s.project ORDER BY count DESC LIMIT 20
+          `),
+          db.execute<{ type: string; count: number }>(sql`
+            SELECT m.type, COUNT(*)::int AS count
+            FROM messages m, ${tsquery} query
+            WHERE m.user_id = ${userId}
+              AND m.search_tsvector @@ query
+              ${facetFilterSQL}
+            GROUP BY m.type ORDER BY count DESC
+          `),
+          db.execute<{ tool_name: string; count: number }>(sql`
+            SELECT m.content->0->>'name' AS tool_name, COUNT(*)::int AS count
+            FROM messages m, ${tsquery} query
+            WHERE m.user_id = ${userId}
+              AND m.search_tsvector @@ query
+              AND m.type = 'assistant'
+              ${facetFilterSQL}
+            GROUP BY tool_name ORDER BY count DESC LIMIT 20
+          `),
+          db.execute<{ source_type: string; count: number }>(sql`
+            SELECT s.source_type, COUNT(*)::int AS count
+            FROM messages m JOIN sessions s ON m.session_id = s.id,
+                 ${tsquery} query
+            WHERE m.user_id = ${userId}
+              AND m.search_tsvector @@ query
+              ${facetFilterSQL}
+            GROUP BY s.source_type ORDER BY count DESC
+          `),
+        ])
+
+        // Get date range
+        const dateRangeResult = await db.execute<{ earliest: string; latest: string }>(sql`
+          SELECT
+            MIN(m.timestamp)::text AS earliest,
+            MAX(m.timestamp)::text AS latest
+          FROM messages m, ${tsquery} query
+          WHERE m.user_id = ${userId}
+            AND m.search_tsvector @@ query
+            ${facetFilterSQL}
+        `)
+
+        facets = {
+          projects: projectRows.map((r) => ({ name: r.name, count: r.count })),
+          messageTypes: typeRows.map((r) => ({ type: r.type, count: r.count })),
+          toolNames: toolRows.filter((r) => r.tool_name)
+            .map((r) => ({ name: r.tool_name, count: r.count })),
+          sources: sourceRows.map((r) => ({ sourceType: r.source_type, count: r.count })),
+          dateRange: {
+            earliest: dateRangeResult[0]?.earliest || '',
+            latest: dateRangeResult[0]?.latest || '',
+          },
+        }
+      } catch (err) {
+        console.warn('Facet query failed:', err)
+      }
+    }
+
     return {
       results,
       total: results.length,
-      query: keyword,
+      query,
+      facets,
     }
   }
 

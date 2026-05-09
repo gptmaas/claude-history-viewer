@@ -18,9 +18,10 @@ export interface ProjectsResponse {
 export async function GET(request: NextRequest) {
   try {
     const machine = request.nextUrl.searchParams.get('machine') || undefined
+    const source = request.nextUrl.searchParams.get('source') || undefined
     const userId = await getUserId()
     const ds = getDataSource()
-    const projects = await ds.getProjects(userId, machine)
+    const projects = await ds.getProjects(userId, machine, source)
 
     return NextResponse.json({ projects } satisfies ProjectsResponse)
   } catch (error) {

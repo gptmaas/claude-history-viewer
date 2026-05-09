@@ -3,6 +3,7 @@ import type {
   SessionsResponse,
   SessionDetail,
   SearchResponse,
+  SearchFilters,
   DashboardStats,
   ProjectStats,
   Machine,
@@ -60,12 +61,12 @@ export class LocalDataSource implements DataSource {
     } as SessionDetail & { session: { date: string } }
   }
 
-  async searchSessions(_userId: string, keyword: string, _filters?: { project?: string; machineId?: string }): Promise<SearchResponse> {
-    const results = await searchSessions(keyword)
+  async searchSessions(_userId: string, filters: SearchFilters): Promise<SearchResponse> {
+    const results = await searchSessions(filters.query)
     return {
       results,
       total: results.length,
-      query: keyword,
+      query: filters.query,
     }
   }
 

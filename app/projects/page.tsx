@@ -18,6 +18,7 @@ import {
   MessageSquare,
   TrendingUp,
   Monitor,
+  Globe,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -49,11 +50,14 @@ function ProjectListView({ onSelect }: { onSelect: (project: string) => void }) 
   const [nameFilter, setNameFilter] = useState('')
   const [machines, setMachines] = useState<Machine[]>([])
   const [selectedMachine, setSelectedMachine] = useState<string>('all')
+  const [sources, setSources] = useState<{name: string; label: string; sessionCount: number}[]>([])
+  const [selectedSource, setSelectedSource] = useState<string>('all')
 
-  const loadProjects = useCallback((machine?: string) => {
+  const loadProjects = useCallback((machine?: string, source?: string) => {
     setLoading(true)
     const params = new URLSearchParams()
     if (machine) params.set('machine', machine)
+    if (source) params.set('source', source)
     fetch(`/api/projects?${params.toString()}`)
       .then((r) => r.json())
       .then((data) => setProjects(data.projects ?? []))
@@ -69,12 +73,17 @@ function ProjectListView({ onSelect }: { onSelect: (project: string) => void }) 
         .then((r) => r.json())
         .then((data) => setMachines(data.machines ?? []))
         .catch(console.error)
+
+      fetch('/api/sources')
+        .then((r) => r.json())
+        .then((data) => setSources(data.sources ?? []))
+        .catch(console.error)
     }
   }, [])
 
   useEffect(() => {
-    loadProjects(selectedMachine === 'all' ? undefined : selectedMachine)
-  }, [selectedMachine]) // eslint-disable-line react-hooks/exhaustive-deps
+    loadProjects(selectedMachine === 'all' ? undefined : selectedMachine, selectedSource === 'all' ? undefined : selectedSource)
+  }, [selectedMachine, selectedSource])
 
   const filteredProjects = projects.filter((p) => {
     if (!nameFilter.trim()) return true
@@ -117,6 +126,23 @@ function ProjectListView({ onSelect }: { onSelect: (project: string) => void }) 
                 {machines.map((m) => (
                   <option key={m.machineId} value={m.machineId}>
                     {m.machineName} ({m.sessionCount})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {sources.length > 0 && (
+            <div className="flex items-center gap-2 w-44">
+              <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <select
+                className="h-9 flex-1 rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground focus:border-primary/50 focus:outline-none"
+                value={selectedSource}
+                onChange={(e) => setSelectedSource(e.target.value)}
+              >
+                <option value="all">All Sources</option>
+                {sources.map((s) => (
+                  <option key={s.name} value={s.name}>
+                    {s.label}
                   </option>
                 ))}
               </select>
