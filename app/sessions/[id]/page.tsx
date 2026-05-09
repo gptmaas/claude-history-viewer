@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import {
-  ArrowLeft, User, Bot, Download, FileText, Clock, ArrowUp, ArrowDown, Eye, Code, Zap, Copy,
+  ArrowLeft, User, Bot, Download, FileText, Clock, ArrowUp, ArrowDown, Eye, Code, Zap, Copy, Share2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -14,6 +14,7 @@ import { ToolUseViewer, ThinkingViewer, ToolResultViewer } from '@/components/to
 import { ContentArrayRenderer } from '@/components/content-array-renderer'
 import { UserMessageRenderer } from '@/components/user-message-renderer'
 import type { Session, Message } from '@/lib/types'
+import { ShareDialog } from '@/components/share-dialog'
 
 export default function SessionDetailPage({ params }: { params: { id: string } }) {
   const [session, setSession] = useState<Session | null>(null)
@@ -30,6 +31,7 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
   const [showRawMessage, setShowRawMessage] = useState<string | null>(null)
   const [copiedItem, setCopiedItem] = useState<string | null>(null)
   const [workingDir, setWorkingDir] = useState<string | null>(null)
+  const [shareOpen, setShareOpen] = useState(false)
 
   useEffect(() => { loadSession() }, [params.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -250,6 +252,9 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
             <Button variant="outline" size="sm" onClick={() => handleExport('md')} className="h-7 text-[11px] border-border text-muted-foreground hover:text-foreground">
               <Download className="w-3 h-3 mr-1" />Export
             </Button>
+            <Button variant="outline" size="sm" onClick={() => setShareOpen(true)} className="h-7 text-[11px] border-border text-muted-foreground hover:text-foreground">
+              <Share2 className="w-3 h-3 mr-1" />Share
+            </Button>
           </div>
         </div>
       </div>
@@ -299,6 +304,8 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
           {(showScrollButton === 'bottom' || showScrollButton === 'both') && <Button size="icon" onClick={() => scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current?.scrollHeight || 0, behavior: 'smooth' })} className="h-10 w-10 rounded-full shadow-lg bg-card border border-border text-muted-foreground hover:text-foreground"><ArrowDown className="h-4 w-4" /></Button>}
         </div>
       )}
+
+      <ShareDialog sessionId={session.sessionId} open={shareOpen} onOpenChange={setShareOpen} />
     </div>
   )
 }

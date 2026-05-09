@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { exportSession } from '@/lib/claude-history'
-import type { ExportFormat } from '@/lib/types'
+import { getDataSource } from '@/lib/data-source'
+import { getUserId } from '@/lib/get-user-id'
+import { exportSession, type ExtendedExportFormat } from '@/lib/export'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,18 +12,28 @@ export async function GET(
   try {
     const { id } = await params
     const searchParams = request.nextUrl.searchParams
-    const format = (searchParams.get('format') || 'md') as ExportFormat
+    const format = (searchParams.get('format') || 'md') as ExtendedExportFormat
 
-    const content = await exportSession(id, format)
+    const userId = await getUserId()
+    const ds = getDataSource()
+    const detail = await ds.loadSessionDetail(userId, id)
 
-    if (!content) {
+    if (!detail) {
       return NextResponse.json(
-        { error: 'Session not found or export failed' },
+        { error: 'Session not found' },
         { status: 404 }
       )
     }
 
-    // Set appropriate content type
+    const content = exportSession(detail, format)
+
+    if (!content) {
+      return NextResponse.json(
+        { error: 'Unsupported export format' },
+        { status: 400 }
+      )
+    }
+
     let contentType = 'text/plain'
     let extension = 'txt'
 
@@ -39,12 +50,18 @@ export async function GET(
         contentType = 'text/html'
         extension = 'html'
         break
+      case 'pdf':
+        contentType = 'text/html'
+        extension = 'html'
+        break
     }
 
     return new NextResponse(content, {
       headers: {
         'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="session-${id}.${extension}"`,
+        'Content-Disposition': format === 'pdf'
+          ? 'inline'
+          : `attachment; filename="session-${id}.${extension}"`,
       },
     })
   } catch (error) {

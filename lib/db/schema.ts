@@ -6,6 +6,7 @@ import {
   timestamp,
   integer,
   jsonb,
+  boolean,
   index,
   uniqueIndex,
   customType,
@@ -119,4 +120,20 @@ export const syncState = pgTable('sync_state', {
 }, (table) => [
   index('idx_sync_state_user_id').on(table.userId),
   uniqueIndex('idx_sync_state_user_source').on(table.userId, table.sourceType, table.machineId),
+])
+
+export const sharedLinks = pgTable('shared_links', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  ownerId: uuid('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  sessionId: uuid('session_id').notNull().references(() => sessions.id, { onDelete: 'cascade' }),
+  slug: varchar('slug', { length: 32 }).notNull().unique(),
+  passwordHash: text('password_hash'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  viewCount: integer('view_count').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_shared_links_owner').on(table.ownerId),
+  index('idx_shared_links_session').on(table.sessionId),
 ])

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 
 // Routes that don't require authentication
-const publicRoutes = ['/login', '/register', '/api/auth', '/api/register']
+const publicRoutes = ['/login', '/register', '/api/auth', '/api/register', '/share']
 
 // Routes that use API key auth instead of session
 const apiKeyRoutes = ['/api/sync']
@@ -32,6 +32,11 @@ export async function middleware(request: NextRequest) {
       return NextResponse.json({ error: 'Missing API key' }, { status: 401 })
     }
     // Actual key validation happens in the route handler
+    return NextResponse.next()
+  }
+
+  // Public share API: GET /api/share/[slug] (where slug is not "manage")
+  if (pathname.match(/^\/api\/share\/[^/]+$/) && request.method === 'GET') {
     return NextResponse.next()
   }
 
