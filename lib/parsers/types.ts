@@ -7,6 +7,12 @@ export interface ParsedSession {
   timestamp: number
 }
 
+export interface MessageUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadInputTokens: number
+}
+
 export interface ParsedMessage {
   type: string
   role?: string
@@ -18,6 +24,9 @@ export interface ParsedMessage {
   project?: string
   projectName?: string
   display?: string
+  // Model and usage fields (extracted from assistant messages)
+  model?: string
+  usage?: MessageUsage
 }
 
 export interface RawFileParser {

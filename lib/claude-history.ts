@@ -8,11 +8,15 @@ import type {
   SearchResult,
   ExportFormat,
 } from './types'
+import type { SourceConfig } from './desktop-config'
 
 // Default Claude Code history location
 const DEFAULT_CLAUDE_DIR = join(process.env.HOME || '', '.claude')
-const HISTORY_FILE = join(DEFAULT_CLAUDE_DIR, 'history.jsonl')
-const PROJECTS_DIR = join(DEFAULT_CLAUDE_DIR, 'projects')
+
+interface SourceDir {
+  type: string
+  path: string
+}
 
 /**
  * Get the Claude directory path (can be overridden by env var)
@@ -22,9 +26,45 @@ function getClaudeDir(): string {
 }
 
 /**
+ * Get configured source directories.
+ * In local-desktop mode, reads from desktop config.
+ * Otherwise, returns the single default Claude dir.
+ */
+let cachedSources: SourceDir[] | null = null
+
+export function resetSourceCache(): void {
+  cachedSources = null
+}
+
+async function getSourceDirs(): Promise<SourceDir[]> {
+  if (cachedSources) return cachedSources
+
+  if (process.env.DATA_SOURCE_MODE === 'local-desktop') {
+    const { loadDesktopConfig, detectDefaultSources } = require('./desktop-config') as typeof import('./desktop-config')
+    const config = await loadDesktopConfig()
+    if (config && config.sources.length > 0) {
+      cachedSources = config.sources
+        .filter((s: SourceConfig) => s.enabled)
+        .map((s: SourceConfig) => ({ type: s.type, path: s.path }))
+      return cachedSources
+    }
+    // No config yet, try auto-detect
+    const detected = await detectDefaultSources()
+    if (detected.length > 0) {
+      cachedSources = detected.map((s: SourceConfig) => ({ type: s.type, path: s.path }))
+      return cachedSources
+    }
+  }
+
+  cachedSources = [{ type: 'claude-code', path: getClaudeDir() }]
+  return cachedSources
+}
+
+/**
  * Parse a project path to extract readable name
  */
-function parseProjectName(projectPath: string): string {
+function parseProjectName(projectPath: string | undefined): string {
+  if (!projectPath) return 'unknown'
   const parts = projectPath.split('/')
   const name = parts[parts.length - 1] || projectPath
   return name
@@ -38,10 +78,10 @@ function timestampToDate(timestamp: number): Date {
 }
 
 /**
- * Read and parse the history.jsonl file
+ * Read and parse the history.jsonl file from a single source directory
  */
-export async function loadSessionsList(): Promise<Session[]> {
-  const historyPath = join(getClaudeDir(), 'history.jsonl')
+async function loadSessionsFromSource(sourceDir: SourceDir): Promise<Session[]> {
+  const historyPath = join(sourceDir.path, 'history.jsonl')
 
   try {
     await access(historyPath)
@@ -62,49 +102,64 @@ export async function loadSessionsList(): Promise<Session[]> {
     }
   }
 
-  // Deduplicate by sessionId, keeping the entry with the latest timestamp
-  const sessionMap = new Map<string, SessionListEntry>()
-  for (const entry of entries) {
-    const existing = sessionMap.get(entry.sessionId)
-    if (!existing || entry.timestamp > existing.timestamp) {
-      sessionMap.set(entry.sessionId, entry)
-    }
-  }
-
-  // Convert to Session objects and sort by timestamp (newest first)
-  const sessions: Session[] = Array.from(sessionMap.values())
-    .map((entry) => ({
-      ...entry,
-      projectName: parseProjectName(entry.project),
-      date: timestampToDate(entry.timestamp),
-    }))
-    .sort((a, b) => b.timestamp - a.timestamp)
-
-  return sessions
+  return entries.map((entry) => ({
+    ...entry,
+    projectName: parseProjectName(entry.project),
+    date: timestampToDate(entry.timestamp),
+    sourceType: sourceDir.type,
+  }))
 }
 
 /**
- * Find the project directory for a given session
+ * Read and parse sessions from all configured source directories
  */
-async function findSessionProjectDir(sessionId: string): Promise<string | null> {
-  const projectsDir = join(getClaudeDir(), 'projects')
+export async function loadSessionsList(): Promise<Session[]> {
+  const sourceDirs = await getSourceDirs()
+  const allSessions: Session[] = []
 
-  try {
-    await access(projectsDir)
-  } catch {
-    return null
+  for (const sourceDir of sourceDirs) {
+    const sessions = await loadSessionsFromSource(sourceDir)
+    allSessions.push(...sessions)
   }
 
-  const dirs = await readdir(projectsDir, { withFileTypes: true })
+  // Deduplicate by sessionId, keeping the entry with the latest timestamp
+  const sessionMap = new Map<string, Session>()
+  for (const session of allSessions) {
+    const existing = sessionMap.get(session.sessionId)
+    if (!existing || session.timestamp > existing.timestamp) {
+      sessionMap.set(session.sessionId, session)
+    }
+  }
 
-  for (const dir of dirs) {
-    if (dir.isDirectory()) {
-      const sessionPath = join(projectsDir, dir.name, `${sessionId}.jsonl`)
-      try {
-        await access(sessionPath)
-        return join(projectsDir, dir.name)
-      } catch {
-        // Session not in this directory
+  return Array.from(sessionMap.values()).sort((a, b) => b.timestamp - a.timestamp)
+}
+
+/**
+ * Find the project directory for a given session across all source directories
+ */
+async function findSessionProjectDir(sessionId: string): Promise<string | null> {
+  const sourceDirs = await getSourceDirs()
+
+  for (const sourceDir of sourceDirs) {
+    const projectsDir = join(sourceDir.path, 'projects')
+
+    try {
+      await access(projectsDir)
+    } catch {
+      continue
+    }
+
+    const dirs = await readdir(projectsDir, { withFileTypes: true })
+
+    for (const dir of dirs) {
+      if (dir.isDirectory()) {
+        const sessionPath = join(projectsDir, dir.name, `${sessionId}.jsonl`)
+        try {
+          await access(sessionPath)
+          return join(projectsDir, dir.name)
+        } catch {
+          // Session not in this directory
+        }
       }
     }
   }

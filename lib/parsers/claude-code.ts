@@ -1,4 +1,4 @@
-import type { RawFileParser, ParsedSession, ParsedMessage } from './types'
+import type { RawFileParser, ParsedSession, ParsedMessage, MessageUsage } from './types'
 
 export class ClaudeCodeParser implements RawFileParser {
   readonly name = 'claude-code'
@@ -74,6 +74,17 @@ export class ClaudeCodeParser implements RawFileParser {
           const uuid = msg.uuid || msg.message?.id
           if (!uuid) continue
 
+          const model = msg.message?.model || undefined
+          const rawUsage = msg.message?.usage
+          let usage: MessageUsage | undefined
+          if (rawUsage) {
+            usage = {
+              inputTokens: rawUsage.input_tokens || 0,
+              outputTokens: rawUsage.output_tokens || 0,
+              cacheReadInputTokens: rawUsage.cache_read_input_tokens || 0,
+            }
+          }
+
           parsed = {
             type: 'assistant',
             role: 'assistant',
@@ -81,6 +92,8 @@ export class ClaudeCodeParser implements RawFileParser {
             uuid,
             sessionId,
             timestamp: msg.timestamp,
+            model,
+            usage,
           }
         } else if (t === 'tool_use') {
           const uuid = msg.uuid || msg.id

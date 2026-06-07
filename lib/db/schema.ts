@@ -98,12 +98,15 @@ export const messages = pgTable('messages', {
   uuid: varchar('uuid', { length: 255 }),
   timestamp: timestamp('timestamp', { withTimezone: true }),
   metadata: jsonb('metadata'),
+  model: varchar('model', { length: 100 }),
+  usage: jsonb('usage'),
   searchVector: text('search_vector'),
   searchTsvector: tsvector('search_tsvector'),
 }, (table) => [
   index('idx_messages_session_id').on(table.sessionId),
   index('idx_messages_user_id').on(table.userId),
   uniqueIndex('idx_messages_uuid').on(table.uuid),
+  index('idx_messages_model').on(table.model),
 ])
 
 export const syncState = pgTable('sync_state', {

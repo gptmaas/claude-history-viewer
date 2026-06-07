@@ -4,7 +4,7 @@ import { eq, and, isNull, sql } from 'drizzle-orm'
 import { getParser } from './parsers/registry'
 import type { ParsedSession, ParsedMessage } from './parsers/types'
 
-const CURRENT_PARSE_VERSION = 1
+const CURRENT_PARSE_VERSION = 2
 
 function extractSearchText(content: unknown): string {
   if (typeof content === 'string') return content
@@ -314,7 +314,17 @@ async function parseFilesWithParser(
       const existingMsg = await db.query.messages.findFirst({
         where: eq(messages.uuid, m.uuid),
       })
-      if (existingMsg) continue
+      if (existingMsg) {
+        if (m.model || m.usage) {
+          await db.update(messages)
+            .set({
+              model: m.model ?? existingMsg.model,
+              usage: m.usage ? JSON.parse(JSON.stringify(m.usage)) : existingMsg.usage,
+            })
+            .where(eq(messages.id, existingMsg.id))
+        }
+        continue
+      }
 
       const searchText = extractSearchText(m.content)
 
@@ -326,6 +336,8 @@ async function parseFilesWithParser(
         content: m.content,
         uuid: m.uuid,
         timestamp: m.timestamp ? new Date(m.timestamp) : null,
+        model: m.model ?? null,
+        usage: m.usage ?? null,
         searchVector: searchText,
         searchTsvector: sql`to_tsvector('simple', ${searchText})`,
       })

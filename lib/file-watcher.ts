@@ -2,6 +2,7 @@
  * File Watcher
  *
  * Watches Claude Code history files for changes and invalidates cache
+ * Supports multiple source directories in desktop mode
  * Uses debouncing to avoid excessive invalidations
  */
 
@@ -10,11 +11,7 @@ import { join } from 'path'
 import { cacheConfig } from './cache-config'
 import { invalidateStatsCache } from './stats-cache'
 import { invalidateAllSessionCaches } from './session-cache'
-
-// Default Claude Code history location
-const DEFAULT_CLAUDE_DIR = join(process.env.HOME || '', '.claude')
-const HISTORY_FILE = join(DEFAULT_CLAUDE_DIR, 'history.jsonl')
-const PROJECTS_DIR = join(DEFAULT_CLAUDE_DIR, 'projects')
+import { isDesktopMode } from './desktop-mode'
 
 type InvalidationHandler = (path: string) => void | Promise<void>
 
@@ -35,18 +32,45 @@ class FileWatcher {
   }
 
   /**
-   * Start watching files
+   * Start watching files from all configured source directories
    */
   start(): void {
     if (this.enabled) return
 
     try {
-      this.watchFile(HISTORY_FILE, 'history')
-      this.watchDirectory(PROJECTS_DIR, 'projects')
+      const sourceDirs = this.getSourceDirs()
+      for (const dir of sourceDirs) {
+        const historyFile = join(dir, 'history.jsonl')
+        const projectsDir = join(dir, 'projects')
+        this.watchFile(historyFile, 'history')
+        this.watchDirectory(projectsDir, 'projects')
+      }
       this.enabled = true
     } catch (error) {
       console.error('Failed to start file watcher:', error)
     }
+  }
+
+  private getSourceDirs(): string[] {
+    const home = process.env.HOME || ''
+    if (process.env.DATA_SOURCE_MODE === 'local-desktop') {
+      // In desktop mode, read source paths from env or use defaults
+      const configDir = process.env.DESKTOP_CONFIG_DIR
+      if (configDir) {
+        // Try to load config synchronously - if it fails, use defaults
+        try {
+          const fs = require('fs')
+          const configPath = join(configDir, 'desktop-config.json')
+          if (fs.existsSync(configPath)) {
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+            return config.sources
+              ?.filter((s: { enabled: boolean }) => s.enabled)
+              ?.map((s: { path: string }) => s.path) || [join(home, '.claude')]
+          }
+        } catch {}
+      }
+    }
+    return [process.env.CLAUDE_DIR || join(home, '.claude')]
   }
 
   /**
@@ -122,19 +146,18 @@ class FileWatcher {
   private async handleFileChange(filepath: string, type: string): Promise<void> {
     console.debug(`File changed: ${filepath} (${type})`)
 
-    // Invalidate caches based on what changed
     try {
+      // In desktop mode, trigger incremental SQLite indexing
+      if (isDesktopMode()) {
+        const { triggerScan } = require('./local-scanner/auto-scan') as typeof import('./local-scanner/auto-scan')
+        triggerScan().catch((err: Error) => console.error('Incremental scan failed:', err))
+      }
+
+      // Invalidate caches based on what changed
       if (type === 'history' || filepath.endsWith('history.jsonl')) {
-        // History file changed - the session list changed, so we need to invalidate stats
-        // Session details are likely still valid, so let them expire naturally
         await invalidateStatsCache()
-        // Don't invalidate all session caches - they will be refreshed as needed
       } else if (filepath.includes('projects')) {
-        // Session file changed - only invalidate stats
-        // Session cache will be refreshed on next access
         await invalidateStatsCache()
-        // Don't invalidate all sessions - let them expire naturally
-        // This prevents a cascade of cache invalidations on every file change
       }
 
       // Trigger custom handlers

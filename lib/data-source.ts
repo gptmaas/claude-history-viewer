@@ -16,6 +16,7 @@ export interface DataSource {
   getProjects(userId: string, machineId?: string, sourceType?: string): Promise<ProjectStats[]>
   getMachines(userId: string): Promise<Machine[]>
   getAnalyticsStats(userId: string, dateRange?: { start: Date; end: Date }): Promise<import('./types').AnalyticsStats>
+  getUsageAnalysis(userId: string, dateRange?: { start: Date; end: Date }): Promise<import('./types').UsageAnalysisData>
 }
 
 import { LocalDataSource } from './local-data-source'
@@ -26,8 +27,6 @@ export function getDataSource(): DataSource {
   if (!dataSourceInstance) {
     const mode = process.env.DATA_SOURCE_MODE || 'local'
     if (mode === 'cloud') {
-      // Cloud data source is initialized separately when DATABASE_URL is set
-      // Dynamic import to avoid bundling db dependencies in local mode
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const mod = require('./db-data-source') as { DbDataSource: new () => DataSource }
@@ -36,9 +35,22 @@ export function getDataSource(): DataSource {
         console.warn('DbDataSource not available, falling back to LocalDataSource')
         dataSourceInstance = new LocalDataSource()
       }
+    } else if (mode === 'local-desktop') {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const mod = require('./local-db-data-source') as { SqliteDataSource: new () => DataSource }
+        dataSourceInstance = new mod.SqliteDataSource()
+      } catch {
+        console.warn('SqliteDataSource not available, falling back to LocalDataSource')
+        dataSourceInstance = new LocalDataSource()
+      }
     } else {
       dataSourceInstance = new LocalDataSource()
     }
   }
   return dataSourceInstance
+}
+
+export function resetDataSource(): void {
+  dataSourceInstance = null
 }

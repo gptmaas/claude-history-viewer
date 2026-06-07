@@ -21,6 +21,10 @@ import type {
   ProjectHeatmapPoint,
   SourceBreakdown,
   TokenUsageEstimate,
+  UsageAnalysisData,
+  DailyModelRequestPoint,
+  DailyModelTokenPoint,
+  ModelUsageSummary,
 } from './types'
 import { getDb } from './db'
 import { sessions, messages } from './db/schema'
@@ -956,6 +960,100 @@ export class DbDataSource implements DataSource {
       projectActivityHeatmap,
       sourceBreakdown,
       estimatedTokenUsage,
+    }
+  }
+
+  async getUsageAnalysis(userId: string, dateRange?: { start: Date; end: Date }): Promise<UsageAnalysisData> {
+    const db = getDb()
+    const startDate = (dateRange?.start || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)).toISOString()
+    const endDate = (dateRange?.end || new Date()).toISOString()
+
+    // Single query: daily stats + model summary in one pass, filtering out unknown/synthetic
+    const dailyResult = await db.execute<{
+      day: string
+      model: string
+      request_count: number
+      input_tokens: string
+      output_tokens: string
+    }>(sql`
+      SELECT
+        date_trunc('day', ${messages.timestamp})::date::text AS day,
+        ${messages.model} AS model,
+        COUNT(*)::int AS request_count,
+        COALESCE(SUM((${messages.usage}->>'inputTokens')::int), 0)::text AS input_tokens,
+        COALESCE(SUM((${messages.usage}->>'outputTokens')::int), 0)::text AS output_tokens
+      FROM ${messages}
+      WHERE ${messages.userId} = ${userId}
+        AND ${messages.type} = 'assistant'
+        AND ${messages.model} IS NOT NULL
+        AND ${messages.model} != '<synthetic>'
+        AND ${messages.timestamp} >= ${startDate}
+        AND ${messages.timestamp} <= ${endDate}
+      GROUP BY date_trunc('day', ${messages.timestamp}), ${messages.model}
+      ORDER BY date_trunc('day', ${messages.timestamp})
+    `)
+
+    const rows = Array.from(dailyResult)
+    const models = [...new Set(rows.map(r => r.model))]
+    const dates = [...new Set(rows.map(r => r.day))].sort()
+
+    // Pivot for charts
+    const requestMap = new Map<string, Map<string, number>>()
+    const tokenMap = new Map<string, Map<string, number>>()
+    for (const r of rows) {
+      if (!requestMap.has(r.day)) requestMap.set(r.day, new Map())
+      requestMap.get(r.day)!.set(r.model, Number(r.request_count))
+      if (!tokenMap.has(r.day)) tokenMap.set(r.day, new Map())
+      tokenMap.get(r.day)!.set(r.model, Number(r.input_tokens) + Number(r.output_tokens))
+    }
+
+    const dailyModelRequestPoints: DailyModelRequestPoint[] = dates.map(date => {
+      const point: DailyModelRequestPoint = { date }
+      for (const model of models) {
+        point[model] = requestMap.get(date)?.get(model) || 0
+      }
+      return point
+    })
+
+    const dailyModelTokenPoints: DailyModelTokenPoint[] = dates.map(date => {
+      const point: DailyModelTokenPoint = { date }
+      for (const model of models) {
+        point[model] = tokenMap.get(date)?.get(model) || 0
+      }
+      return point
+    })
+
+    // Model summary from same data
+    const summaryMap = new Map<string, { requestCount: number; inputTokens: number; outputTokens: number }>()
+    for (const r of rows) {
+      const existing = summaryMap.get(r.model) || { requestCount: 0, inputTokens: 0, outputTokens: 0 }
+      existing.requestCount += Number(r.request_count)
+      existing.inputTokens += Number(r.input_tokens)
+      existing.outputTokens += Number(r.output_tokens)
+      summaryMap.set(r.model, existing)
+    }
+
+    const totalRequests = [...summaryMap.values()].reduce((s, v) => s + v.requestCount, 0)
+    const totalTokens = [...summaryMap.values()].reduce((s, v) => s + v.inputTokens + v.outputTokens, 0)
+
+    const modelSummary: ModelUsageSummary[] = [...summaryMap.entries()]
+      .sort((a, b) => b[1].requestCount - a[1].requestCount)
+      .map(([model, v]) => ({
+        model,
+        requestCount: v.requestCount,
+        inputTokens: v.inputTokens,
+        outputTokens: v.outputTokens,
+        totalTokens: v.inputTokens + v.outputTokens,
+        percentage: totalRequests > 0 ? (v.requestCount / totalRequests) * 100 : 0,
+      }))
+
+    return {
+      dailyModelRequests: dailyModelRequestPoints,
+      dailyModelTokens: dailyModelTokenPoints,
+      modelSummary,
+      totalRequests,
+      totalTokens,
+      disclaimer: '数据来自已记录的 API 响应。仅展示有模型标识的数据，不含 unknown 或 synthetic 消息。',
     }
   }
 }

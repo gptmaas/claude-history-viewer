@@ -8,6 +8,7 @@ import type {
   ProjectStats,
   Machine,
   AnalyticsStats,
+  UsageAnalysisData,
 } from './types'
 import { loadSessionsList, loadSessionDetail, searchSessions } from './claude-history'
 import { getSessionCache } from './session-cache'
@@ -38,7 +39,7 @@ export class LocalDataSource implements DataSource {
     return {
       sessions: paginatedSessions.map((s) => ({
         ...s,
-        date: s.date.toISOString(),
+        date: typeof s.date === 'string' ? s.date : s.date.toISOString(),
       })),
       total,
       page,
@@ -56,7 +57,7 @@ export class LocalDataSource implements DataSource {
       ...detail,
       session: {
         ...detail.session,
-        date: detail.session.date.toISOString(),
+        date: typeof detail.session.date === 'string' ? detail.session.date : detail.session.date.toISOString(),
       },
     } as SessionDetail & { session: { date: string } }
   }
@@ -139,6 +140,17 @@ export class LocalDataSource implements DataSource {
         bySource: [],
         disclaimer: '本地模式下不支持 Token 估算',
       },
+    }
+  }
+
+  async getUsageAnalysis(_userId: string, _dateRange?: { start: Date; end: Date }): Promise<UsageAnalysisData> {
+    return {
+      dailyModelRequests: [],
+      dailyModelTokens: [],
+      modelSummary: [],
+      totalRequests: 0,
+      totalTokens: 0,
+      disclaimer: '本地模式下不支持用量分析',
     }
   }
 }

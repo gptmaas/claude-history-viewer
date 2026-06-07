@@ -14,8 +14,11 @@ import {
   Sun,
   Moon,
   BarChart3,
+  LineChart,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+const isDesktop = process.env.NEXT_PUBLIC_APP_MODE === 'desktop'
 
 const navItems = [
   { href: '/', label: '概览', icon: LayoutDashboard },
@@ -23,6 +26,12 @@ const navItems = [
   { href: '/sessions', label: '会话', icon: MessageSquare },
   { href: '/search', label: '搜索', icon: Search },
   { href: '/analytics', label: '分析', icon: BarChart3 },
+  { href: '/usage-analysis', label: '用量分析', icon: LineChart },
+]
+
+const desktopNavItems = [
+  ...navItems,
+  { href: '/desktop-settings', label: '设置', icon: Settings },
 ]
 
 function useTheme() {
@@ -63,7 +72,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 py-4 px-3 space-y-0.5">
-        {navItems.map((item) => {
+        {(isDesktop ? desktopNavItems : navItems).map((item) => {
           const isActive =
             item.href === '/'
               ? pathname === '/'
@@ -108,7 +117,11 @@ export function Sidebar() {
           <span className="hidden dark:inline">深色模式</span>
         </button>
 
-        {session ? (
+        {isDesktop ? (
+          <div className="px-3 py-2">
+            <p className="text-[10px] text-muted-foreground">本地桌面模式</p>
+          </div>
+        ) : session ? (
           <div className="flex items-center gap-2.5 px-2 py-2 rounded-md">
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-[10px] font-semibold text-white">
               {session.user?.email?.[0]?.toUpperCase() || 'U'}

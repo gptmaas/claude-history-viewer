@@ -1,6 +1,6 @@
 {
   "name": "codememory",
-  "version": "0.4.0",
+  "version": "0.7.1",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -13,12 +13,16 @@
     "lint": "next lint",
     "core:build": "npm --workspace @codememory/core run build",
     "sync-agent:build": "npm --workspace codememory-sync run build",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "desktop:dev": "DATA_SOURCE_MODE=local-desktop NEXT_PUBLIC_APP_MODE=desktop NEXT_PUBLIC_DATA_SOURCE_MODE=local-desktop tauri dev",
+    "desktop:build": "NEXT_PUBLIC_APP_MODE=desktop next build && tauri build",
+    "tauri": "tauri"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-fs": "^2.5.1",
     "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
@@ -39,6 +43,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.9.6",
     "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22",
     "@types/react": "^18",
     "@types/react-dom": "^18",

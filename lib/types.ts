@@ -280,3 +280,32 @@ export interface TokenUsageEstimate {
   bySource: { sourceType: string; inputTokens: number; outputTokens: number }[]
   disclaimer: string
 }
+
+// Usage Analysis types (v0.6)
+export interface UsageAnalysisData {
+  dailyModelRequests: DailyModelRequestPoint[]
+  dailyModelTokens: DailyModelTokenPoint[]
+  modelSummary: ModelUsageSummary[]
+  totalRequests: number
+  totalTokens: number
+  disclaimer: string
+}
+
+export interface DailyModelRequestPoint {
+  date: string
+  [modelName: string]: number | string
+}
+
+export interface DailyModelTokenPoint {
+  date: string
+  [modelName: string]: number | string
+}
+
+export interface ModelUsageSummary {
+  model: string
+  requestCount: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  percentage: number
+}

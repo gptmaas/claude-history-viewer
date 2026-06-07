@@ -1,18 +1,38 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { MessageSquare, Clock, Calendar, User, Bot, RefreshCw, TrendingUp, Zap } from 'lucide-react'
 import { ProjectCard, type Project } from '@/components/project-card'
 import type { DashboardStats } from '@/app/api/stats/route'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { formatDistanceToNow } from 'date-fns'
 
+const isDesktopClient = () => {
+  if (typeof window === 'undefined') return false
+  return typeof (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ !== 'undefined'
+}
+
 export default function HomePage() {
+  const router = useRouter()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [statsLoading, setStatsLoading] = useState(true)
   const [projectsLoading, setProjectsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Desktop mode: check if configured
+  useEffect(() => {
+    if (!isDesktopClient()) return
+    fetch('/api/desktop-config')
+      .then((r) => r.json())
+      .then((config) => {
+        if (!config.sources || config.sources.length === 0) {
+          router.push('/desktop-settings')
+        }
+      })
+      .catch(() => {})
+  }, [router])
 
   useEffect(() => {
     fetch('/api/projects')
