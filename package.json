@@ -2,11 +2,17 @@
   "name": "codememory",
   "version": "0.4.0",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "core:build": "npm --workspace @codememory/core run build",
+    "sync-agent:build": "npm --workspace codememory-sync run build",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
