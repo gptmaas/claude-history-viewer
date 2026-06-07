@@ -1,4 +1,4 @@
-# 个人本地桌面版与自动化产品开发流水线规划
+# CodeMemory v0.7 主规划 — 个人本地桌面版与自动化产品开发流水线
 
 ## 1. 产品定位
 
@@ -652,6 +652,17 @@ P0 示例：
 - 最近发布版本。
 
 ## 8. 实施路线图
+
+v0.7 作为主版本，不建议一次性交付全部桌面化与自动化流水线能力。建议拆分为以下小版本：
+
+- [v0.7.0 — 桌面 App MVP](./version-design-v0.7.0.md)：补齐 Tauri 桌面壳、打开即 Dashboard、基础本地设置。
+- [v0.7.1 — 本地索引与多数据源](./version-design-v0.7.1.md)：引入 SQLite、本地 scanner/parser、多 source 增量索引。
+- [v0.7.2 — 流水线基础模型](./version-design-v0.7.2.md)：需求、阶段、产物、评审、事件日志和手动流转。
+- [v0.7.3 — 方案生成与技术评审](./version-design-v0.7.3.md)：需求补全、产品方案、技术方案、任务拆分和风险评审。
+- [v0.7.4 — 自动编码与测试执行](./version-design-v0.7.4.md)：Executor、AI Coding CLI 调用、命令白名单、测试运行和自动修复循环。
+- [v0.7.5 — 集成验收与发布准备](./version-design-v0.7.5.md)：E2E/截图证据、验收报告、构建与 release note、发布门禁。
+
+总览文档见 [v0.7 版本总览](./version-design-v0.7.md)。
 
 ### Phase 1：桌面 App MVP
 
