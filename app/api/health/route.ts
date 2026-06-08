@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 export async function GET() {
   // In desktop mode, initialize SQLite and trigger auto-scan on first health check
-  if (process.env.DATA_SOURCE_MODE === 'local-desktop') {
+  if (process.env.DATA_SOURCE_MODE === 'local' || process.env.DATA_SOURCE_MODE === 'local-desktop') {
     try {
       const { runMigrations } = require('@/lib/local-db/migrate') as typeof import('@/lib/local-db/migrate')
       runMigrations()
