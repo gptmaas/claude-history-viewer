@@ -16,11 +16,16 @@ interface ApiKeyInfo {
 
 type SettingsTab = 'ai' | 'api-keys' | 'about'
 
-const tabs: Array<{ id: SettingsTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+const allTabs: Array<{ id: SettingsTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: 'ai', label: 'AI 配置', icon: Settings2 },
   { id: 'api-keys', label: 'API Keys', icon: Key },
   { id: 'about', label: '关于', icon: Info },
 ]
+
+function getTabs(isLocal: boolean) {
+  if (isLocal) return allTabs.filter(t => t.id !== 'api-keys')
+  return allTabs
+}
 
 export default function SettingsPage() {
   const { data: session, status } = useSession()
@@ -30,14 +35,17 @@ export default function SettingsPage() {
   const [newKey, setNewKey] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const isLocalMode = typeof window !== 'undefined' && process.env.NEXT_PUBLIC_DATA_SOURCE_MODE === 'local'
+
   useEffect(() => {
+    if (isLocalMode) return
     if (status === 'unauthenticated') {
       router.push('/login')
     }
-  }, [status, router])
+  }, [status, router, isLocalMode])
 
   useEffect(() => {
-    if (status !== 'authenticated') return
+    if (!isLocalMode && status !== 'authenticated') return
     fetch('/api/keys')
       .then((r) => r.json())
       .then((data) => {
@@ -45,7 +53,7 @@ export default function SettingsPage() {
         setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [status])
+  }, [status, isLocalMode])
 
   const createKey = async () => {
     const res = await fetch('/api/keys', { method: 'POST' })
@@ -67,7 +75,7 @@ export default function SettingsPage() {
     setKeys(keys.filter((k) => k.id !== keyId))
   }
 
-  if (status !== 'authenticated') return null
+  if (!isLocalMode && status !== 'authenticated') return null
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -77,7 +85,7 @@ export default function SettingsPage() {
           <h1 className="text-sm font-semibold text-foreground">设置</h1>
         </div>
         <div className="px-2 space-y-0.5">
-          {tabs.map((tab) => {
+          {getTabs(isLocalMode).map((tab) => {
             const Icon = tab.icon
             const active = activeTab === tab.id
             return (
