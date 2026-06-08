@@ -63,7 +63,7 @@ export default function SettingsPage() {
   if (status !== 'authenticated') return null
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
+    <div className="flex-1 overflow-y-auto">
       <div className="container mx-auto px-4 py-8 max-w-2xl">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50 mb-6">
           Settings

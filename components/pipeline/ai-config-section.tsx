@@ -160,26 +160,16 @@ export function AiConfigSection() {
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground">Model</label>
-              <select
-                value={MODEL_PRESETS.includes(form.model) ? form.model : '__custom__'}
-                onChange={(e) => {
-                  if (e.target.value !== '__custom__') {
-                    setForm(f => ({ ...f, model: e.target.value }))
-                  }
-                }}
+              <input
+                list="model-presets"
+                value={form.model}
+                onChange={(e) => setForm(f => ({ ...f, model: e.target.value }))}
                 className="w-full mt-1 px-3 py-2 rounded-md border border-border bg-background text-sm"
-              >
-                {MODEL_PRESETS.map(m => <option key={m} value={m}>{m}</option>)}
-                <option value="__custom__">自定义...</option>
-              </select>
-              {!MODEL_PRESETS.includes(form.model) && (
-                <input
-                  value={form.model}
-                  onChange={(e) => setForm(f => ({ ...f, model: e.target.value }))}
-                  className="w-full mt-1 px-3 py-2 rounded-md border border-border bg-background text-sm"
-                  placeholder="自定义模型名称"
-                />
-              )}
+                placeholder="输入或选择模型"
+              />
+              <datalist id="model-presets">
+                {MODEL_PRESETS.map(m => <option key={m} value={m} />)}
+              </datalist>
             </div>
           </div>
           <div>
