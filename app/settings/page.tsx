@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Copy, Plus, Trash2 } from 'lucide-react'
+import { AiConfigSection } from '@/components/pipeline/ai-config-section'
 
 interface ApiKeyInfo {
   id: string
@@ -140,6 +141,10 @@ export default function SettingsPage() {
           <p className="text-xs text-slate-500 mt-1">
             Then enter your server URL and the API key above.
           </p>
+        </div>
+
+        <div className="mt-6">
+          <AiConfigSection />
         </div>
       </div>
     </div>
