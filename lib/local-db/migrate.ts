@@ -1,6 +1,6 @@
 import { getRawDb } from './index'
 
-const CURRENT_VERSION = 3
+const CURRENT_VERSION = 4
 
 const MIGRATIONS: Record<number, string[]> = {
   1: [
@@ -225,6 +225,22 @@ const MIGRATIONS: Record<number, string[]> = {
     `CREATE INDEX IF NOT EXISTS idx_pipeline_session_links_item_id ON pipeline_session_links(item_id)`,
     `CREATE INDEX IF NOT EXISTS idx_pipeline_session_links_session_id ON pipeline_session_links(session_id)`,
     `CREATE INDEX IF NOT EXISTS idx_pipeline_session_links_stage_id ON pipeline_session_links(stage_id)`,
+  ],
+  4: [
+    `CREATE TABLE IF NOT EXISTS ai_config (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT,
+      provider TEXT NOT NULL DEFAULT 'anthropic',
+      api_key TEXT,
+      base_url TEXT,
+      model TEXT NOT NULL DEFAULT 'claude-sonnet-4-6-20250627',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      project_dir TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_ai_config_is_active ON ai_config(is_active)`,
   ],
 }
 

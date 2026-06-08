@@ -198,3 +198,19 @@ export const pipelineSessionLinks = sqliteTable('pipeline_session_links', {
   index('idx_pipeline_session_links_session_id').on(table.sessionId),
   index('idx_pipeline_session_links_stage_id').on(table.stageId),
 ])
+
+export const aiConfig = sqliteTable('ai_config', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  description: text('description'),
+  provider: text('provider').notNull().default('anthropic'),
+  apiKey: text('api_key'),
+  baseUrl: text('base_url'),
+  model: text('model').notNull().default('claude-sonnet-4-6-20250627'),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  projectDir: text('project_dir'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()).$onUpdateFn(() => new Date()),
+}, (table) => [
+  index('idx_ai_config_is_active').on(table.isActive),
+])
