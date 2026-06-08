@@ -15,6 +15,7 @@ import {
   Moon,
   BarChart3,
   LineChart,
+  GitBranch,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -27,6 +28,7 @@ const navItems = [
   { href: '/search', label: '搜索', icon: Search },
   { href: '/analytics', label: '分析', icon: BarChart3 },
   { href: '/usage-analysis', label: '用量分析', icon: LineChart },
+  { href: '/pipeline', label: '流水线', icon: GitBranch },
 ]
 
 const desktopNavItems = [

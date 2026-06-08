@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import {
-  ArrowLeft, User, Bot, Download, FileText, Clock, ArrowUp, ArrowDown, Eye, Code, Zap, Copy, Share2,
+  ArrowLeft, User, Bot, Download, FileText, Clock, ArrowUp, ArrowDown, Eye, Code, Zap, Copy, Share2, GitBranch, Link2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -15,6 +15,7 @@ import { ContentArrayRenderer } from '@/components/content-array-renderer'
 import { UserMessageRenderer } from '@/components/user-message-renderer'
 import type { Session, Message } from '@/lib/types'
 import { ShareDialog } from '@/components/share-dialog'
+import { LinkSessionDialog } from '@/components/pipeline/link-session-dialog'
 
 export default function SessionDetailPage({ params }: { params: { id: string } }) {
   const [session, setSession] = useState<Session | null>(null)
@@ -32,6 +33,7 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
   const [copiedItem, setCopiedItem] = useState<string | null>(null)
   const [workingDir, setWorkingDir] = useState<string | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
+  const [linkSessionOpen, setLinkSessionOpen] = useState(false)
 
   useEffect(() => { loadSession() }, [params.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -255,6 +257,14 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
             <Button variant="outline" size="sm" onClick={() => setShareOpen(true)} className="h-7 text-[11px] border-border text-muted-foreground hover:text-foreground">
               <Share2 className="w-3 h-3 mr-1" />Share
             </Button>
+            <Link href={`/pipeline/new?sourceSessionId=${session.sessionId}`}>
+              <Button variant="outline" size="sm" className="h-7 text-[11px] border-border text-muted-foreground hover:text-foreground">
+                <GitBranch className="w-3 h-3 mr-1" />创建需求
+              </Button>
+            </Link>
+            <Button variant="outline" size="sm" onClick={() => setLinkSessionOpen(true)} className="h-7 text-[11px] border-border text-muted-foreground hover:text-foreground">
+              <Link2 className="w-3 h-3 mr-1" />关联流水线
+            </Button>
           </div>
         </div>
       </div>
@@ -306,6 +316,7 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
       )}
 
       <ShareDialog sessionId={session.sessionId} open={shareOpen} onOpenChange={setShareOpen} />
+      <LinkSessionDialog sessionId={session.sessionId} open={linkSessionOpen} onOpenChange={setLinkSessionOpen} />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { getRawDb } from './index'
 
-const CURRENT_VERSION = 2
+const CURRENT_VERSION = 3
 
 const MIGRATIONS: Record<number, string[]> = {
   1: [
@@ -127,6 +127,104 @@ const MIGRATIONS: Record<number, string[]> = {
   2: [
     `CREATE INDEX IF NOT EXISTS idx_local_messages_type ON local_messages(type)`,
     `CREATE INDEX IF NOT EXISTS idx_local_messages_timestamp ON local_messages(timestamp)`,
+  ],
+  3: [
+    // pipeline_projects
+    `CREATE TABLE IF NOT EXISTS pipeline_projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_projects_status ON pipeline_projects(status)`,
+
+    // pipeline_items
+    `CREATE TABLE IF NOT EXISTS pipeline_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL REFERENCES pipeline_projects(id),
+      title TEXT NOT NULL,
+      background TEXT,
+      goals TEXT,
+      acceptance_criteria TEXT,
+      current_stage_index INTEGER NOT NULL DEFAULT 0,
+      overall_status TEXT NOT NULL DEFAULT 'in_progress',
+      priority TEXT NOT NULL DEFAULT 'P2',
+      source_session_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_items_project_id ON pipeline_items(project_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_items_status ON pipeline_items(overall_status)`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_items_current_stage ON pipeline_items(current_stage_index)`,
+
+    // pipeline_stages
+    `CREATE TABLE IF NOT EXISTS pipeline_stages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES pipeline_items(id),
+      stage_key TEXT NOT NULL,
+      stage_index INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'not_started',
+      started_at INTEGER,
+      completed_at INTEGER,
+      updated_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_stages_item_id ON pipeline_stages(item_id)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_pipeline_stages_item_stage ON pipeline_stages(item_id, stage_key)`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_stages_status ON pipeline_stages(status)`,
+
+    // pipeline_artifacts
+    `CREATE TABLE IF NOT EXISTS pipeline_artifacts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      stage_id INTEGER NOT NULL REFERENCES pipeline_stages(id),
+      name TEXT NOT NULL,
+      artifact_type TEXT NOT NULL DEFAULT 'markdown',
+      content TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_artifacts_stage_id ON pipeline_artifacts(stage_id)`,
+
+    // pipeline_reviews
+    `CREATE TABLE IF NOT EXISTS pipeline_reviews (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      stage_id INTEGER NOT NULL REFERENCES pipeline_stages(id),
+      result TEXT NOT NULL,
+      comment TEXT,
+      reviewer_type TEXT NOT NULL DEFAULT 'user',
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_reviews_stage_id ON pipeline_reviews(stage_id)`,
+
+    // pipeline_events
+    `CREATE TABLE IF NOT EXISTS pipeline_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES pipeline_items(id),
+      stage_id INTEGER REFERENCES pipeline_stages(id),
+      transition TEXT NOT NULL,
+      from_status TEXT,
+      to_status TEXT,
+      detail TEXT,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_events_item_id ON pipeline_events(item_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_events_stage_id ON pipeline_events(stage_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_events_created_at ON pipeline_events(created_at)`,
+
+    // pipeline_session_links
+    `CREATE TABLE IF NOT EXISTS pipeline_session_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES pipeline_items(id),
+      stage_id INTEGER REFERENCES pipeline_stages(id),
+      session_id TEXT NOT NULL,
+      link_type TEXT NOT NULL,
+      note TEXT,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_session_links_item_id ON pipeline_session_links(item_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_session_links_session_id ON pipeline_session_links(session_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_session_links_stage_id ON pipeline_session_links(stage_id)`,
   ],
 }
 
