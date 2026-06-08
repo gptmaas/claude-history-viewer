@@ -42,3 +42,7 @@ node dist/index.js status    # 查看同步状态
 ```
 
 配置文件位于 `~/.claude-sync/config.json`，机器标识缓存在 `~/.claude-sync/machine-id` 和 `~/.claude-sync/machine-name`。
+
+## Git 规范
+
+- 提交时不加 `Co-Authored-By` 行
