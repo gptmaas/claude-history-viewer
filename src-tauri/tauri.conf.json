@@ -5,7 +5,7 @@
   "identifier": "com.codememory.desktop",
   "build": {
     "frontendDist": "../out",
-    "devUrl": "http://127.0.0.1:3000",
+    "devUrl": "http://127.0.0.1:3721",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
