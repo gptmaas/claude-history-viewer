@@ -10,6 +10,8 @@ import { StageCard } from '@/components/pipeline/stage-card'
 import { EventTimeline } from '@/components/pipeline/event-timeline'
 import { AddArtifactDialog } from '@/components/pipeline/add-artifact-dialog'
 import { AddReviewDialog } from '@/components/pipeline/add-review-dialog'
+import { GenerateDialog } from '@/components/pipeline/generate-dialog'
+import type { GenerateType } from '@/lib/ai/prompts'
 
 export default function PipelineItemDetailPage() {
   const params = useParams()
@@ -21,6 +23,12 @@ export default function PipelineItemDetailPage() {
   const [loading, setLoading] = useState(true)
   const [artifactStageId, setArtifactStageId] = useState<number | null>(null)
   const [reviewStageId, setReviewStageId] = useState<number | null>(null)
+  const [generateState, setGenerateState] = useState<{
+    open: boolean
+    stageKey: string
+    generateType: GenerateType
+  }>({ open: false, stageKey: '', generateType: 'requirement' })
+  const [hasAiConfig, setHasAiConfig] = useState(false)
 
   const fetchItem = useCallback(async () => {
     try {
@@ -42,6 +50,12 @@ export default function PipelineItemDetailPage() {
   }, [itemId, router])
 
   useEffect(() => { fetchItem() }, [fetchItem])
+
+  useEffect(() => {
+    fetch('/api/settings/ai').then(r => r.json()).then((configs: Array<{ isActive: number; apiKeySet: boolean }>) => {
+      setHasAiConfig(configs.some(c => c.isActive && c.apiKeySet))
+    }).catch(() => {})
+  }, [])
 
   const handleTransition = async (stageId: number, transition: PipelineTransition) => {
     try {
@@ -80,6 +94,10 @@ export default function PipelineItemDetailPage() {
     } catch (err) {
       console.error('Add review failed:', err)
     }
+  }
+
+  const handleGenerate = (stageKey: string, generateType: GenerateType) => {
+    setGenerateState({ open: true, stageKey, generateType })
   }
 
   if (loading) {
@@ -161,6 +179,8 @@ export default function PipelineItemDetailPage() {
               onTransition={handleTransition}
               onAddArtifact={(id) => setArtifactStageId(id)}
               onAddReview={(id) => setReviewStageId(id)}
+              hasAiConfig={hasAiConfig}
+              onGenerate={handleGenerate}
             />
           ))}
         </div>
@@ -186,6 +206,14 @@ export default function PipelineItemDetailPage() {
         onSubmit={(result, comment) => {
           if (reviewStageId) handleAddReview(reviewStageId, result, comment)
         }}
+      />
+      <GenerateDialog
+        open={generateState.open}
+        onOpenChange={(open) => setGenerateState(s => ({ ...s, open }))}
+        itemId={itemId}
+        stageKey={generateState.stageKey}
+        generateType={generateState.generateType}
+        onSaved={fetchItem}
       />
     </div>
   )

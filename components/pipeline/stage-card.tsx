@@ -5,8 +5,9 @@ import type { PipelineTransition } from '@/lib/pipeline-types'
 import { getPipelineStage } from '@/lib/pipeline-types'
 import { getValidTransitions } from '@/lib/pipeline-state-machine'
 import { StageStatusBadge } from './stage-status-badge'
-import { ChevronDown, ChevronUp, Plus, FileText, MessageSquare } from 'lucide-react'
+import { ChevronDown, ChevronUp, Plus, FileText, MessageSquare, Sparkles } from 'lucide-react'
 import { useState } from 'react'
+import type { GenerateType } from '@/lib/ai/prompts'
 
 const transitionLabels: Record<PipelineTransition, string> = {
   start: '开始',
@@ -28,12 +29,30 @@ interface StageCardProps {
   onTransition: (stageId: number, transition: PipelineTransition) => void
   onAddArtifact: (stageId: number) => void
   onAddReview: (stageId: number) => void
+  hasAiConfig: boolean
+  onGenerate: (stageKey: string, generateType: GenerateType) => void
 }
 
-export function StageCard({ stage, isCurrentStage, onTransition, onAddArtifact, onAddReview }: StageCardProps) {
+export function StageCard({ stage, isCurrentStage, onTransition, onAddArtifact, onAddReview, hasAiConfig, onGenerate }: StageCardProps) {
   const [expanded, setExpanded] = useState(isCurrentStage)
   const definition = getPipelineStage(stage.stageKey)
   const validTransitions = getValidTransitions(stage.status)
+
+  const generateButtons: Array<{ type: GenerateType; label: string }> = stage.stageKey === 'idea'
+    ? [{ type: 'requirement', label: 'AI 补全需求' }]
+    : stage.stageKey === 'product_design_review'
+    ? [
+        { type: 'product_design', label: '生成产品方案' },
+        { type: 'product_review', label: '生成产品评审' },
+      ]
+    : stage.stageKey === 'technical_design_review'
+    ? [
+        { type: 'technical_design', label: '生成技术方案' },
+        { type: 'task_breakdown', label: '生成任务拆分' },
+        { type: 'tech_review', label: '生成技术评审' },
+        { type: 'test_plan', label: '生成测试计划' },
+      ]
+    : []
 
   return (
     <div className={cn(
@@ -104,6 +123,22 @@ export function StageCard({ stage, isCurrentStage, onTransition, onAddArtifact, 
               >
                 <Plus className="w-3 h-3" /> 评审
               </button>
+              {generateButtons.length > 0 && (
+                <>
+                  <div className="w-px h-4 bg-border mx-1" />
+                  {generateButtons.map((btn) => (
+                    <button
+                      key={btn.type}
+                      onClick={() => onGenerate(stage.stageKey, btn.type)}
+                      disabled={!hasAiConfig}
+                      className="flex items-center gap-1 px-3 py-1 rounded text-xs font-medium bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      title={!hasAiConfig ? '请先在设置中配置 AI' : undefined}
+                    >
+                      <Sparkles className="w-3 h-3" /> {btn.label}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           )}
 
