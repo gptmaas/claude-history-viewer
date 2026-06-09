@@ -1,34 +1,40 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, GitBranch } from 'lucide-react'
+import { ArrowLeft, Zap, Layers, Activity } from 'lucide-react'
 import type { PipelineItemDetail, PipelineEvent } from '@/lib/pipeline-data'
 import type { PipelineTransition } from '@/lib/pipeline-types'
-import { StageCard } from '@/components/pipeline/stage-card'
-import { EventTimeline } from '@/components/pipeline/event-timeline'
+import { cn } from '@/lib/utils'
+import { PipelineStepper } from '@/components/pipeline/pipeline-stepper'
+import { StageMessage } from '@/components/pipeline/stage-message'
+import { ItemOverviewPanel } from '@/components/pipeline/item-overview-panel'
 import { AddArtifactDialog } from '@/components/pipeline/add-artifact-dialog'
 import { AddReviewDialog } from '@/components/pipeline/add-review-dialog'
-import { GenerateDialog } from '@/components/pipeline/generate-dialog'
-import type { GenerateType } from '@/lib/ai/prompts'
+import { ArtifactViewer, getVersionedArtifacts } from '@/components/pipeline/artifact-viewer'
+import { AutopilotProgress, initialAutopilotState, initializeSteps, type AutopilotState } from '@/components/pipeline/autopilot-progress'
+
+type TabKey = 'detail' | 'overview'
 
 export default function PipelineItemDetailPage() {
   const params = useParams()
   const router = useRouter()
   const itemId = Number(params.id)
+  const abortRef = useRef<AbortController | null>(null)
+  const initializedRef = useRef(false)
 
   const [item, setItem] = useState<PipelineItemDetail | null>(null)
   const [events, setEvents] = useState<PipelineEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [artifactStageId, setArtifactStageId] = useState<number | null>(null)
   const [reviewStageId, setReviewStageId] = useState<number | null>(null)
-  const [generateState, setGenerateState] = useState<{
-    open: boolean
-    stageKey: string
-    generateType: GenerateType
-  }>({ open: false, stageKey: '', generateType: 'requirement' })
   const [hasAiConfig, setHasAiConfig] = useState(false)
+  const [autopilot, setAutopilot] = useState<AutopilotState>(initialAutopilotState)
+
+  const [selectedStageIndex, setSelectedStageIndex] = useState<number | null>(null)
+  const [activeTab, setActiveTab] = useState<TabKey>('detail')
+  const [selectedArtifactId, setSelectedArtifactId] = useState<number | null>(null)
 
   const fetchItem = useCallback(async () => {
     try {
@@ -36,12 +42,14 @@ export default function PipelineItemDetailPage() {
         fetch(`/api/pipeline/items/${itemId}`),
         fetch(`/api/pipeline/events?itemId=${itemId}`),
       ])
-      if (!itemRes.ok) {
-        router.push('/pipeline')
-        return
-      }
-      setItem(await itemRes.json())
+      if (!itemRes.ok) { router.push('/pipeline'); return }
+      const data = await itemRes.json()
+      setItem(data)
       setEvents(await eventsRes.json())
+      if (!initializedRef.current) {
+        initializedRef.current = true
+        setSelectedStageIndex(data.currentStageIndex ?? 0)
+      }
     } catch (err) {
       console.error('Failed to load item:', err)
     } finally {
@@ -60,45 +68,98 @@ export default function PipelineItemDetailPage() {
   const handleTransition = async (stageId: number, transition: PipelineTransition) => {
     try {
       await fetch(`/api/pipeline/stages/${stageId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transition }),
       })
       fetchItem()
-    } catch (err) {
-      console.error('Transition failed:', err)
-    }
+    } catch (err) { console.error('Transition failed:', err) }
   }
 
   const handleAddArtifact = async (stageId: number, name: string, artifactType: string, content: string) => {
     try {
       await fetch(`/api/pipeline/stages/${stageId}/artifacts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, artifactType, content }),
       })
       fetchItem()
-    } catch (err) {
-      console.error('Add artifact failed:', err)
-    }
+    } catch (err) { console.error('Add artifact failed:', err) }
   }
 
   const handleAddReview = async (stageId: number, result: string, comment: string) => {
     try {
       await fetch(`/api/pipeline/stages/${stageId}/reviews`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ result, comment }),
       })
       fetchItem()
+    } catch (err) { console.error('Add review failed:', err) }
+  }
+
+  const handleStageSelect = (stageIndex: number) => {
+    setSelectedStageIndex(stageIndex)
+    setActiveTab('detail')
+  }
+
+  const handleSelectArtifact = (artifactId: number) => {
+    setSelectedArtifactId(artifactId)
+    setActiveTab('detail')
+  }
+
+  const { selectedArtifact, selectedVersionLabel } = useMemo(() => {
+    if (!item || selectedArtifactId === null) return { selectedArtifact: null, selectedVersionLabel: '' }
+    for (const stage of item.stages) {
+      const versioned = getVersionedArtifacts(stage.artifacts)
+      const found = versioned.find(v => v.artifact.id === selectedArtifactId)
+      if (found) return { selectedArtifact: found.artifact, selectedVersionLabel: found.versionLabel }
+    }
+    return { selectedArtifact: null, selectedVersionLabel: '' }
+  }, [item, selectedArtifactId])
+
+  const startAutopilot = async () => {
+    abortRef.current = new AbortController()
+    setAutopilot({ running: true, steps: initializeSteps(), currentStageKey: null, stoppedReason: null, completed: false, error: null })
+    try {
+      const response = await fetch('/api/pipeline/autopilot', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId }), signal: abortRef.current.signal,
+      })
+      if (!response.ok || !response.body) throw new Error('Failed to start autopilot')
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let currentEvent = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          if (line.startsWith('event: ')) { currentEvent = line.slice(7) }
+          else if (line.startsWith('data: ')) {
+            try { const data = JSON.parse(line.slice(6)); if (currentEvent) { handleSSEEvent(currentEvent, data); currentEvent = '' } } catch { /* skip */ }
+          } else if (line.trim() === '') { currentEvent = '' }
+        }
+      }
     } catch (err) {
-      console.error('Add review failed:', err)
+      if (err instanceof Error && err.name === 'AbortError') return
+      setAutopilot(prev => ({ ...prev, running: false, error: err instanceof Error ? err.message : 'Auto pilot failed' }))
     }
   }
 
-  const handleGenerate = (stageKey: string, generateType: GenerateType) => {
-    setGenerateState({ open: true, stageKey, generateType })
+  const handleSSEEvent = (eventType: string, data: Record<string, unknown>) => {
+    if (data.stageKey !== undefined) setAutopilot(prev => ({ ...prev, currentStageKey: data.stageKey as string }))
+    switch (eventType) {
+      case 'generating': setAutopilot(prev => ({ ...prev, steps: prev.steps.map(s => s.generateType === data.generateType ? { ...s, status: 'running' as const } : s) })); break
+      case 'generated': setAutopilot(prev => ({ ...prev, steps: prev.steps.map(s => s.generateType === data.generateType ? { ...s, status: 'done' as const, artifactName: data.artifactName as string } : s) })); break
+      case 'review_result': setAutopilot(prev => ({ ...prev, steps: prev.steps.map(s => s.generateType === data.generateType ? { ...s, reviewResult: data.result as string, risks: data.risks as Array<{ level: string; message: string }> } : s) })); break
+      case 'stopped': setAutopilot(prev => ({ ...prev, running: false, stoppedReason: data.message as string })); fetchItem(); break
+      case 'completed': setAutopilot(prev => ({ ...prev, running: false, completed: true })); fetchItem(); break
+      case 'error': setAutopilot(prev => ({ ...prev, running: false, error: data.message as string })); fetchItem(); break
+    }
   }
+
+  const cancelAutopilot = () => { abortRef.current?.abort(); setAutopilot(prev => ({ ...prev, running: false })) }
 
   if (loading) {
     return (
@@ -114,81 +175,107 @@ export default function PipelineItemDetailPage() {
 
   if (!item) return null
 
-  const statusLabels: Record<string, string> = {
-    in_progress: '进行中',
-    completed: '已完成',
-    abandoned: '已放弃',
-  }
+  const statusLabels: Record<string, string> = { in_progress: '进行中', completed: '已完成', abandoned: '已放弃' }
+  const selectedStage = selectedStageIndex !== null ? item.stages.find(s => s.stageIndex === selectedStageIndex) : null
+  const canAutopilot = hasAiConfig && !autopilot.running && item.overallStatus === 'in_progress' && item.currentStageIndex <= 2
+
+  const tabs: Array<{ key: TabKey; label: string; icon: React.ReactNode }> = [
+    { key: 'detail', label: '阶段详情', icon: <Layers className="w-3.5 h-3.5" /> },
+    { key: 'overview', label: '全局概览', icon: <Activity className="w-3.5 h-3.5" /> },
+  ]
+
+  const showViewer = selectedArtifactId !== null && activeTab === 'detail'
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="max-w-3xl mx-auto px-8 py-6 space-y-6">
-        {/* Header */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <Link href="/pipeline" className="text-muted-foreground hover:text-foreground transition-colors">
-              <ArrowLeft className="w-5 h-5" />
-            </Link>
-            <GitBranch className="w-5 h-5 text-primary" />
-            <h1 className="text-xl font-semibold text-foreground">{item.title}</h1>
-          </div>
-          <div className="flex items-center gap-2 ml-8">
-            <span className="text-xs font-medium bg-primary/10 text-primary px-2 py-0.5 rounded">
+    <div className="flex-1 flex overflow-hidden">
+      {/* Left panel */}
+      <div className="w-[260px] shrink-0 border-r border-border bg-card/50 flex flex-col">
+        <div className="px-4 py-4 border-b border-border">
+          <Link href="/pipeline" className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors mb-3">
+            <ArrowLeft className="w-3 h-3" /> 返回列表
+          </Link>
+          <h1 className="text-[13px] font-semibold text-foreground leading-snug line-clamp-2">{item.title}</h1>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-[10px] font-medium bg-primary/10 text-primary px-1.5 py-0.5 rounded">
               {statusLabels[item.overallStatus] ?? item.overallStatus}
             </span>
-            <span className="text-xs text-muted-foreground">优先级: {item.priority}</span>
+            <span className="text-[10px] text-muted-foreground">{item.priority}</span>
           </div>
         </div>
+        <div className="flex-1 overflow-y-auto px-2.5 py-3">
+          <PipelineStepper
+            stages={item.stages}
+            currentStageIndex={item.currentStageIndex}
+            selectedIndex={selectedStageIndex}
+            onSelect={handleStageSelect}
+            onSelectArtifact={handleSelectArtifact}
+          />
+        </div>
+        <div className="px-3 py-3 border-t border-border space-y-2">
+          {canAutopilot && (
+            <button onClick={startAutopilot}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-gradient-to-r from-primary to-blue-500 text-white hover:shadow-md hover:shadow-primary/20 transition-all">
+              <Zap className="w-3.5 h-3.5" /> Auto Pilot
+            </button>
+          )}
+        </div>
+      </div>
 
-        {/* Metadata */}
-        {(item.background || (item.goals && item.goals.length > 0) || (item.acceptanceCriteria && item.acceptanceCriteria.length > 0)) && (
-          <div className="bg-card rounded-xl border p-4 space-y-3">
-            {item.background && (
-              <div>
-                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">背景</h3>
-                <p className="text-sm text-foreground whitespace-pre-wrap">{item.background}</p>
-              </div>
-            )}
-            {item.goals && item.goals.length > 0 && (
-              <div>
-                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">目标</h3>
-                <ul className="list-disc list-inside text-sm text-foreground space-y-1">
-                  {item.goals.map((g, i) => <li key={i}>{g}</li>)}
-                </ul>
-              </div>
-            )}
-            {item.acceptanceCriteria && item.acceptanceCriteria.length > 0 && (
-              <div>
-                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">验收标准</h3>
-                <ul className="list-disc list-inside text-sm text-foreground space-y-1">
-                  {item.acceptanceCriteria.map((a, i) => <li key={i}>{a}</li>)}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Stage track */}
-        <div className="space-y-2">
-          <h2 className="text-sm font-semibold text-foreground">阶段轨道</h2>
-          {item.stages.map((stage) => (
-            <StageCard
-              key={stage.id}
-              stage={stage}
-              isCurrentStage={stage.stageIndex === item.currentStageIndex}
-              onTransition={handleTransition}
-              onAddArtifact={(id) => setArtifactStageId(id)}
-              onAddReview={(id) => setReviewStageId(id)}
-              hasAiConfig={hasAiConfig}
-              onGenerate={handleGenerate}
-            />
+      {/* Right panel */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Tab bar */}
+        <div className="flex items-center border-b border-border px-6 bg-card/30 shrink-0">
+          {tabs.map(tab => (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                'flex items-center gap-1.5 px-4 py-3 text-xs font-medium transition-all border-b-2 -mb-px',
+                activeTab === tab.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border',
+              )}>
+              {tab.icon} {tab.label}
+            </button>
           ))}
         </div>
 
-        {/* Events */}
-        <div className="bg-card rounded-xl border p-4">
-          <h2 className="text-sm font-semibold text-foreground mb-3">事件日志</h2>
-          <EventTimeline events={events} />
+        {/* Content area */}
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Top: stage info */}
+          <div className={cn('overflow-y-auto', showViewer ? 'flex-none max-h-[40%]' : 'flex-1')}>
+            <div className="px-8 py-6">
+              <AutopilotProgress state={autopilot} onCancel={cancelAutopilot} />
+              {activeTab === 'detail' && selectedStage && (
+                <div className="fade-in-up">
+                  <StageMessage
+                    stage={selectedStage}
+                    isCurrentStage={selectedStage.stageIndex === item.currentStageIndex}
+                    hasAiConfig={hasAiConfig}
+                    itemId={itemId}
+                    selectedArtifactId={selectedArtifactId}
+                    onTransition={handleTransition}
+                    onAddArtifact={(id) => setArtifactStageId(id)}
+                    onAddReview={(id) => setReviewStageId(id)}
+                    onSaved={fetchItem}
+                    onSelectArtifact={handleSelectArtifact}
+                    disabled={autopilot.running}
+                  />
+                </div>
+              )}
+              {activeTab === 'detail' && !selectedStage && (
+                <div className="text-center py-12 text-sm text-muted-foreground">请在左侧选择一个阶段查看详情</div>
+              )}
+              {activeTab === 'overview' && <ItemOverviewPanel item={item} events={events} />}
+            </div>
+          </div>
+
+          {/* Bottom: artifact viewer */}
+          {showViewer && (
+            <div className="flex-1 min-h-0 border-t border-border bg-background">
+              <ArtifactViewer
+                artifact={selectedArtifact}
+                versionLabel={selectedVersionLabel}
+                onClose={() => setSelectedArtifactId(null)}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -196,24 +283,12 @@ export default function PipelineItemDetailPage() {
       <AddArtifactDialog
         open={artifactStageId !== null}
         onOpenChange={(open) => { if (!open) setArtifactStageId(null) }}
-        onSubmit={(name, type, content) => {
-          if (artifactStageId) handleAddArtifact(artifactStageId, name, type, content)
-        }}
+        onSubmit={(name, type, content) => { if (artifactStageId) handleAddArtifact(artifactStageId, name, type, content) }}
       />
       <AddReviewDialog
         open={reviewStageId !== null}
         onOpenChange={(open) => { if (!open) setReviewStageId(null) }}
-        onSubmit={(result, comment) => {
-          if (reviewStageId) handleAddReview(reviewStageId, result, comment)
-        }}
-      />
-      <GenerateDialog
-        open={generateState.open}
-        onOpenChange={(open) => setGenerateState(s => ({ ...s, open }))}
-        itemId={itemId}
-        stageKey={generateState.stageKey}
-        generateType={generateState.generateType}
-        onSaved={fetchItem}
+        onSubmit={(result, comment) => { if (reviewStageId) handleAddReview(reviewStageId, result, comment) }}
       />
     </div>
   )

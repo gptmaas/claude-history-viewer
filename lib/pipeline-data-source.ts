@@ -193,11 +193,13 @@ export class SqlitePipelineDataSource implements PipelineDataSource {
     const now = Date.now()
 
     const result = raw.transaction(() => {
-      // Read current stage
-      const stage = raw.prepare('SELECT * FROM pipeline_stages WHERE id = ?').get(stageId) as PipelineStageRow | undefined
+      // Read current stage (raw SQL returns snake_case column names)
+      const stage = raw.prepare('SELECT * FROM pipeline_stages WHERE id = ?').get(stageId) as Record<string, unknown> | undefined
       if (!stage) throw new Error(`Stage ${stageId} not found`)
 
       const fromStatus = stage.status as PipelineStageStatus
+      const stageItemId = stage.item_id as number
+      const stageIndex = stage.stage_index as number
 
       // Validate transition
       if (!isValidTransition(fromStatus, transition)) {
@@ -211,7 +213,7 @@ export class SqlitePipelineDataSource implements PipelineDataSource {
         status: toStatus,
         updated_at: now,
       }
-      if (transition === 'start' && !stage.startedAt) {
+      if (transition === 'start' && !stage.started_at) {
         updates.started_at = now
       }
       if (['approve', 'advance', 'auto_pass', 'skip'].includes(transition)) {
@@ -227,35 +229,35 @@ export class SqlitePipelineDataSource implements PipelineDataSource {
 
       // If stage passed, advance the item's currentStageIndex
       if (['approve', 'advance', 'auto_pass'].includes(transition)) {
-        const item = raw.prepare('SELECT * FROM pipeline_items WHERE id = ?').get(stage.itemId) as PipelineItem | undefined
-        if (item && stage.stageIndex === item.currentStageIndex) {
-          const nextIndex = stage.stageIndex + 1
+        const item = raw.prepare('SELECT * FROM pipeline_items WHERE id = ?').get(stageItemId) as Record<string, unknown> | undefined
+        if (item && stageIndex === item.current_stage_index) {
+          const nextIndex = stageIndex + 1
           // Skip over already-skipped stages
           let targetIndex = nextIndex
-          const allStages = raw.prepare('SELECT stage_index, status FROM pipeline_stages WHERE item_id = ? ORDER BY stage_index').all(stage.itemId) as Array<{ stage_index: number; status: string }>
+          const allStages = raw.prepare('SELECT stage_index, status FROM pipeline_stages WHERE item_id = ? ORDER BY stage_index').all(stageItemId) as Array<{ stage_index: number; status: string }>
           while (targetIndex < allStages.length && allStages[targetIndex].status === 'skipped') {
             targetIndex++
           }
-          raw.prepare('UPDATE pipeline_items SET current_stage_index = ?, updated_at = ? WHERE id = ?').run(targetIndex, now, stage.itemId)
+          raw.prepare('UPDATE pipeline_items SET current_stage_index = ?, updated_at = ? WHERE id = ?').run(targetIndex, now, stageItemId)
 
           // If all stages passed/skipped, mark item as completed
           if (targetIndex >= allStages.length) {
-            raw.prepare("UPDATE pipeline_items SET overall_status = 'completed', updated_at = ? WHERE id = ?").run(now, stage.itemId)
+            raw.prepare("UPDATE pipeline_items SET overall_status = 'completed', updated_at = ? WHERE id = ?").run(now, stageItemId)
           }
         }
       }
 
       // If rollback on a passed stage, move item back
-      if (transition === 'rollback' && stage.stageIndex < (raw.prepare('SELECT current_stage_index FROM pipeline_items WHERE id = ?').get(stage.itemId) as { current_stage_index: number }).current_stage_index) {
-        raw.prepare('UPDATE pipeline_items SET current_stage_index = ?, overall_status = ?, updated_at = ? WHERE id = ?').run(stage.stageIndex, 'in_progress', now, stage.itemId)
+      if (transition === 'rollback' && stageIndex < (raw.prepare('SELECT current_stage_index FROM pipeline_items WHERE id = ?').get(stageItemId) as { current_stage_index: number }).current_stage_index) {
+        raw.prepare('UPDATE pipeline_items SET current_stage_index = ?, overall_status = ?, updated_at = ? WHERE id = ?').run(stageIndex, 'in_progress', now, stageItemId)
       }
 
       // Insert event
       raw.prepare(
         `INSERT INTO pipeline_events (item_id, stage_id, transition, from_status, to_status, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).run(stage.itemId, stageId, transition, fromStatus, toStatus, detail ? JSON.stringify(detail) : null, now)
+      ).run(stageItemId, stageId, transition, fromStatus, toStatus, detail ? JSON.stringify(detail) : null, now)
 
-      // Read back
+      // Read back via Drizzle to get camelCase mapped result
       return raw.prepare('SELECT * FROM pipeline_stages WHERE id = ?').get(stageId) as PipelineStageRow
     })()
 

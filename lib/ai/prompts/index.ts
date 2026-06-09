@@ -29,6 +29,16 @@ export interface GenerateMeta {
   isReview: boolean
 }
 
+export const GENERATE_LABELS: Record<GenerateType, string> = {
+  requirement: 'AI 补全需求',
+  product_design: '生成产品方案',
+  product_review: '生成产品评审',
+  technical_design: '生成技术方案',
+  tech_review: '生成技术评审',
+  task_breakdown: '生成任务拆分',
+  test_plan: '生成测试计划',
+}
+
 export const GENERATE_META: Record<GenerateType, GenerateMeta> = {
   requirement: { artifactName: '需求说明', artifactType: 'markdown', isReview: false },
   product_design: { artifactName: '产品方案', artifactType: 'markdown', isReview: false },
